@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, X, Sparkles } from 'lucide-react';
 import {
   DndContext,
@@ -975,6 +975,12 @@ function pickLatestChapter(tree: ProjectTree): ChapterEntry | null {
   return best;
 }
 
+function chapterGroupLabel(c: ChapterEntry): string {
+  return c.kind === 'interlude'
+    ? `Interlude ${c.interlude ?? '·'} — ${c.title || c.slug}`
+    : `Ch. ${c.chapter ?? '·'} — ${c.title || c.slug}`;
+}
+
 function SceneSwimlane({
   status,
   label,
@@ -1009,13 +1015,20 @@ function SceneSwimlane({
         {cards.length === 0 && (
           <p className="swimlane-empty">— nothing here yet —</p>
         )}
-        {cards.map((c) => (
-          <DraggableSceneCard
-            key={c.scene.path}
-            card={c}
-            onOpenFile={onOpenFile}
-          />
-        ))}
+        {cards.map((c, i) => {
+          const prevChapter = i > 0 ? cards[i - 1].chapter.slug : null;
+          const showGroup = c.chapter.slug !== prevChapter;
+          return (
+            <React.Fragment key={c.scene.path}>
+              {showGroup && (
+                <div className="lane-chapter-group">
+                  {chapterGroupLabel(c.chapter)}
+                </div>
+              )}
+              <DraggableSceneCard card={c} onOpenFile={onOpenFile} />
+            </React.Fragment>
+          );
+        })}
         <button className="swimlane-add" onClick={onNewScene}>
           + scene
         </button>

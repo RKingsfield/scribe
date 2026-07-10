@@ -10,8 +10,6 @@ It runs as a single Docker container with a FastAPI backend and React PWA fronte
 
 ![Outline planning view with act-grouped chapters](docs/screenshots/plan-outline.png)
 
-![Status corkboard with draft/revision/final swimlanes](docs/screenshots/plan-corkboard.png)
-
 ![AI chat with scope picker and model selection](docs/screenshots/chat.png)
 
 It's also a PWA you can pin to your phone or tablet. Edit on the plane, sync when you land -- writes go to IndexedDB immediately and flush to the server whenever you're back online. Conflicts are saved as plaintext files you can merge by hand, so nothing gets lost.
