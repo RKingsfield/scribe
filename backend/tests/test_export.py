@@ -20,8 +20,8 @@ def client() -> TestClient:
 
 
 def test_compose_includes_title_page_and_chapter_headings(sample_project: Path) -> None:
-    md = compose_manuscript("barrow")
-    assert "# The Barrow Path" in md
+    md = compose_manuscript("example-novel")
+    assert "# The Example Novel" in md
     assert "_Author_" in md
     assert "\n# Chapter 1\n" in md
     assert "Tarn tested his axe balance." in md
@@ -30,7 +30,7 @@ def test_compose_includes_title_page_and_chapter_headings(sample_project: Path) 
 
 
 def test_compose_drops_frontmatter(sample_project: Path) -> None:
-    md = compose_manuscript("barrow")
+    md = compose_manuscript("example-novel")
     assert "---\n" not in md  # no leading frontmatter
     assert "scene: 1" not in md
 
@@ -41,16 +41,16 @@ def test_compose_strips_scene_beats_by_default(sample_project: Path) -> None:
     scene = proj / "chapters" / "11_Chapter_11" / "01.md"
     text = scene.read_text(encoding="utf-8")
     scene.write_text(text + "\n[[Tarn flinches at the sound]]\n", encoding="utf-8")
-    md = compose_manuscript("barrow")
+    md = compose_manuscript("example-novel")
     assert "Tarn flinches" not in md
-    md2 = compose_manuscript("barrow", ExportOptions(include_scene_beats=True))
+    md2 = compose_manuscript("example-novel", ExportOptions(include_scene_beats=True))
     assert "Tarn flinches" in md2
 
 
 def test_compose_includes_summaries_when_requested(sample_project: Path) -> None:
-    md = compose_manuscript("barrow", ExportOptions(include_summaries=True))
+    md = compose_manuscript("example-novel", ExportOptions(include_summaries=True))
     assert "Opens on the killing ground" in md
-    md2 = compose_manuscript("barrow")
+    md2 = compose_manuscript("example-novel")
     assert "Opens on the killing ground" not in md2
 
 
@@ -58,15 +58,15 @@ def test_compose_includes_summaries_when_requested(sample_project: Path) -> None
 
 
 def test_export_md_passthrough(sample_project: Path) -> None:
-    r = client().get("/api/projects/barrow/export", params={"format": "md"})
+    r = client().get("/api/projects/example-novel/export", params={"format": "md"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/markdown")
-    assert "barrow.md" in r.headers["content-disposition"]
-    assert "# The Barrow Path" in r.text
+    assert "example-novel.md" in r.headers["content-disposition"]
+    assert "# The Example Novel" in r.text
 
 
 def test_export_unsupported_format_400(sample_project: Path) -> None:
-    r = client().get("/api/projects/barrow/export", params={"format": "pdf"})
+    r = client().get("/api/projects/example-novel/export", params={"format": "pdf"})
     assert r.status_code in (400, 422)
 
 
@@ -74,7 +74,7 @@ def test_export_pandoc_when_binary_missing_returns_503(
     sample_project: Path, monkeypatch
 ) -> None:
     monkeypatch.setattr("scribe.export.pandoc.shutil.which", lambda _: None)
-    r = client().get("/api/projects/barrow/export", params={"format": "docx"})
+    r = client().get("/api/projects/example-novel/export", params={"format": "docx"})
     assert r.status_code == 503
     assert "pandoc" in r.json()["detail"].lower()
 
@@ -106,12 +106,12 @@ def test_export_pandoc_invokes_subprocess_with_format_flag(
     )
 
     r = client().get(
-        "/api/projects/barrow/export",
+        "/api/projects/example-novel/export",
         params={"format": "epub"},
     )
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("application/epub+zip")
-    assert "barrow.epub" in r.headers["content-disposition"]
+    assert "example-novel.epub" in r.headers["content-disposition"]
     assert r.content == b"FAKE_DOCX_BYTES"
     # epub3 with toc and metadata title should be in the args
     args = captured["args"]
@@ -137,6 +137,6 @@ def test_export_propagates_pandoc_error(sample_project: Path, monkeypatch) -> No
         "scribe.export.pandoc.asyncio.create_subprocess_exec", fake_create
     )
 
-    r = client().get("/api/projects/barrow/export", params={"format": "docx"})
+    r = client().get("/api/projects/example-novel/export", params={"format": "docx"})
     assert r.status_code == 500
     assert "pandoc failed" in r.json()["detail"].lower()

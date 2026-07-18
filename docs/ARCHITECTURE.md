@@ -148,7 +148,7 @@ Custom extensions:
 | `codexLink.ts` | Decorates character/reference names, Ctrl-click navigates to entry |
 | `typewriter.ts` | Centered cursor mode |
 
-Keyboard shortcuts: Mod-B/I/Shift-X/E for bold/italic/strikethrough/code, Mod-Shift-R for rewrite dialog.
+Keyboard shortcuts: Mod-B/I/Shift-X/E for bold/italic/strikethrough/code, Mod-Shift-R for rewrite dialogue.
 
 ### Styling
 

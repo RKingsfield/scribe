@@ -22,7 +22,7 @@ def client() -> TestClient:
 
 
 def test_scope_everything_pulls_all_chapters_and_scenes(sample_project: Path) -> None:
-    bundle = build_bundle("barrow", ScopeRequest(kind="everything"), include_codex=False)
+    bundle = build_bundle("example-novel", ScopeRequest(kind="everything"), include_codex=False)
     paths = [s.path for s in bundle.sections]
     assert "chapters/01_Chapter_01/chapter.md" in paths
     assert "chapters/01_Chapter_01/01.md" in paths
@@ -34,7 +34,7 @@ def test_scope_everything_pulls_all_chapters_and_scenes(sample_project: Path) ->
 
 def test_scope_chapter_returns_only_one_chapter(sample_project: Path) -> None:
     bundle = build_bundle(
-        "barrow",
+        "example-novel",
         ScopeRequest(kind="chapter", chapter="11_Chapter_11"),
         include_codex=False,
     )
@@ -49,7 +49,7 @@ def test_scope_chapter_returns_only_one_chapter(sample_project: Path) -> None:
 
 def test_scope_scene_returns_single_file(sample_project: Path) -> None:
     bundle = build_bundle(
-        "barrow",
+        "example-novel",
         ScopeRequest(kind="scene", path="chapters/11_Chapter_11/02.md"),
         include_codex=False,
     )
@@ -58,7 +58,7 @@ def test_scope_scene_returns_single_file(sample_project: Path) -> None:
 
 
 def test_scope_codex_only_returns_codex(sample_project: Path) -> None:
-    bundle = build_bundle("barrow", ScopeRequest(kind="codex"), include_codex=False)
+    bundle = build_bundle("example-novel", ScopeRequest(kind="codex"), include_codex=False)
     assert bundle.sections == []
     assert bundle.codex is not None
     assert "Tarn" in bundle.codex
@@ -67,7 +67,7 @@ def test_scope_codex_only_returns_codex(sample_project: Path) -> None:
 
 def test_include_codex_attaches_codex_to_any_scope(sample_project: Path) -> None:
     bundle = build_bundle(
-        "barrow",
+        "example-novel",
         ScopeRequest(kind="scene", path="chapters/11_Chapter_11/02.md"),
         include_codex=True,
     )
@@ -77,12 +77,12 @@ def test_include_codex_attaches_codex_to_any_scope(sample_project: Path) -> None
 
 def test_render_system_prompt_includes_scope_label_and_paths(sample_project: Path) -> None:
     bundle = build_bundle(
-        "barrow",
+        "example-novel",
         ScopeRequest(kind="chapter", chapter="01_Chapter_01"),
         include_codex=True,
     )
-    prompt = render_system_prompt("The Barrow Path", bundle)
-    assert "The Barrow Path" in prompt
+    prompt = render_system_prompt("The Example Novel", bundle)
+    assert "The Example Novel" in prompt
     assert "Chapter — Chapter 1" in prompt
     assert "_chapters/01_Chapter_01/01.md_" in prompt
     assert "# Codex" in prompt
@@ -91,7 +91,7 @@ def test_render_system_prompt_includes_scope_label_and_paths(sample_project: Pat
 def test_scope_chapter_unknown_slug_raises(sample_project: Path) -> None:
     with pytest.raises(ValueError):
         build_bundle(
-            "barrow",
+            "example-novel",
             ScopeRequest(kind="chapter", chapter="does-not-exist"),
             include_codex=False,
         )
@@ -102,7 +102,7 @@ def test_scope_chapter_unknown_slug_raises(sample_project: Path) -> None:
 
 def test_scope_preview_returns_estimates(sample_project: Path) -> None:
     r = client().post(
-        "/api/projects/barrow/chat/scope/preview",
+        "/api/projects/example-novel/chat/scope/preview",
         json={
             "messages": [],
             "scope": {"kind": "everything"},
@@ -120,7 +120,7 @@ def test_scope_preview_returns_estimates(sample_project: Path) -> None:
 
 def test_scope_preview_chapter(sample_project: Path) -> None:
     r = client().post(
-        "/api/projects/barrow/chat/scope/preview",
+        "/api/projects/example-novel/chat/scope/preview",
         json={
             "messages": [],
             "scope": {"kind": "chapter", "chapter": "11_Chapter_11"},
@@ -135,7 +135,7 @@ def test_scope_preview_chapter(sample_project: Path) -> None:
 
 def test_scope_preview_invalid_kind_returns_400(sample_project: Path) -> None:
     r = client().post(
-        "/api/projects/barrow/chat/scope/preview",
+        "/api/projects/example-novel/chat/scope/preview",
         json={"messages": [], "scope": {"kind": "act"}, "include_codex": False},
     )
     # missing act number
@@ -217,7 +217,7 @@ def test_stream_relays_orchestrator_chunks(sample_project: Path, monkeypatch) ->
     _patch_orchestrator(monkeypatch, chunks)
     with client().stream(
         "POST",
-        "/api/projects/barrow/chat/stream",
+        "/api/projects/example-novel/chat/stream",
         json={
             "messages": [{"role": "user", "content": "Say hi"}],
             "scope": {"kind": "scene", "path": "chapters/11_Chapter_11/02.md"},
@@ -237,7 +237,7 @@ def test_stream_relays_orchestrator_error(sample_project: Path, monkeypatch) -> 
     _patch_orchestrator(monkeypatch, ["upstream is unhappy"], status=500)
     with client().stream(
         "POST",
-        "/api/projects/barrow/chat/stream",
+        "/api/projects/example-novel/chat/stream",
         json={
             "messages": [{"role": "user", "content": "Hello"}],
             "scope": {"kind": "everything"},
@@ -258,7 +258,7 @@ def test_rewrite_relays_orchestrator_chunks(sample_project: Path, monkeypatch) -
     _patch_orchestrator(monkeypatch, chunks)
     with client().stream(
         "POST",
-        "/api/projects/barrow/chat/rewrite",
+        "/api/projects/example-novel/chat/rewrite",
         json={
             "selection": "Tarn tested his axe balance.",
             "instruction": "Tighten this; cut adverbs",
@@ -276,7 +276,7 @@ def test_rewrite_relays_orchestrator_chunks(sample_project: Path, monkeypatch) -
 
 def test_rewrite_rejects_empty_selection(sample_project: Path) -> None:
     r = client().post(
-        "/api/projects/barrow/chat/rewrite",
+        "/api/projects/example-novel/chat/rewrite",
         json={"selection": "   ", "instruction": "tighten"},
     )
     assert r.status_code == 400
@@ -284,7 +284,7 @@ def test_rewrite_rejects_empty_selection(sample_project: Path) -> None:
 
 def test_rewrite_rejects_empty_instruction(sample_project: Path) -> None:
     r = client().post(
-        "/api/projects/barrow/chat/rewrite",
+        "/api/projects/example-novel/chat/rewrite",
         json={"selection": "Tarn tested his axe balance.", "instruction": ""},
     )
     assert r.status_code == 400
@@ -434,7 +434,7 @@ def test_stream_routes_to_anthropic_and_translates_text_deltas(
     holder = _patch_anthropic(monkeypatch, lines)
     with client().stream(
         "POST",
-        "/api/projects/barrow/chat/stream",
+        "/api/projects/example-novel/chat/stream",
         json={
             "messages": [{"role": "user", "content": "say hi"}],
             "scope": {"kind": "scene", "path": "chapters/11_Chapter_11/02.md"},
@@ -470,7 +470,7 @@ def test_stream_anthropic_surfaces_upstream_error(
     )
     with client().stream(
         "POST",
-        "/api/projects/barrow/chat/stream",
+        "/api/projects/example-novel/chat/stream",
         json={
             "messages": [{"role": "user", "content": "hi"}],
             "scope": {"kind": "everything"},
@@ -488,7 +488,7 @@ def test_stream_503_when_claude_requested_without_key(
 ) -> None:
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "")
     r = client().post(
-        "/api/projects/barrow/chat/stream",
+        "/api/projects/example-novel/chat/stream",
         json={
             "messages": [{"role": "user", "content": "hi"}],
             "scope": {"kind": "scene", "path": "chapters/11_Chapter_11/02.md"},
@@ -572,7 +572,7 @@ def test_rewrite_routes_to_anthropic(sample_project: Path, monkeypatch) -> None:
     _patch_anthropic(monkeypatch, lines)
     with client().stream(
         "POST",
-        "/api/projects/barrow/chat/rewrite",
+        "/api/projects/example-novel/chat/rewrite",
         json={
             "selection": "Tarn tested his axe balance.",
             "instruction": "Tighten this.",

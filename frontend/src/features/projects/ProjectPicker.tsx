@@ -71,7 +71,7 @@ function NewProjectForm({ onCreated }: { onCreated: () => void }) {
   return (
     <form onSubmit={submit} className="new-project">
       <input
-        placeholder="slug (e.g. the-barrow-path)"
+        placeholder="slug (e.g. the-example-novel)"
         value={slug}
         onChange={(e) => setSlug(e.target.value)}
         required

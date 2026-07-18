@@ -14,14 +14,14 @@ def writing_root(monkeypatch, tmp_path: Path) -> Path:
 
 @pytest.fixture
 def sample_project(writing_root: Path) -> Path:
-    proj = writing_root / "barrow"
+    proj = writing_root / "example-novel"
     (proj / "chapters" / "01_Chapter_01").mkdir(parents=True)
     (proj / "chapters" / "11_Chapter_11").mkdir(parents=True)
     (proj / "references").mkdir(parents=True)
     (proj / "character-profiles").mkdir(parents=True)
 
     (proj / "project.yml").write_text(
-        "title: The Barrow Path\nslug: barrow\nauthor: Author\n"
+        "title: The Example Novel\nslug: example-novel\nauthor: Author\n"
         "default_model: local\nacts:\n  - name: Act One\n    chapters: [1, 16]\n",
         encoding="utf-8",
     )

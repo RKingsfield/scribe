@@ -12,11 +12,11 @@ from scribe.storage.project import load_project
 
 def test_path_escape_blocked(sample_project: Path) -> None:
     with pytest.raises(HTTPException):
-        paths.resolve_in_project("barrow", "../../etc/passwd")
+        paths.resolve_in_project("example-novel", "../../etc/passwd")
     with pytest.raises(HTTPException):
-        paths.resolve_in_project("barrow", "/etc/passwd")
+        paths.resolve_in_project("example-novel", "/etc/passwd")
     with pytest.raises(HTTPException):
-        paths.resolve_in_project("barrow", "chapters/../../escape.md")
+        paths.resolve_in_project("example-novel", "chapters/../../escape.md")
 
 
 def test_invalid_slug_blocked(writing_root: Path) -> None:
@@ -26,9 +26,9 @@ def test_invalid_slug_blocked(writing_root: Path) -> None:
 
 
 def test_resolve_within_project(sample_project: Path) -> None:
-    p = paths.resolve_in_project("barrow", "chapters/01_Chapter_01/chapter.md")
+    p = paths.resolve_in_project("example-novel", "chapters/01_Chapter_01/chapter.md")
     assert p.is_file()
-    p = paths.resolve_in_project("barrow", "chapters/01_Chapter_01/01.md")
+    p = paths.resolve_in_project("example-novel", "chapters/01_Chapter_01/01.md")
     assert p.is_file()
 
 
@@ -94,8 +94,8 @@ def test_manifest_skips_dotfiles(sample_project: Path) -> None:
 
 def test_load_project(sample_project: Path) -> None:
     p = load_project(sample_project)
-    assert p.title == "The Barrow Path"
-    assert p.slug == "barrow"
+    assert p.title == "The Example Novel"
+    assert p.slug == "example-novel"
     assert len(p.acts) == 1
     assert p.acts[0].name == "Act One"
     assert p.acts[0].chapters == [1, 16]

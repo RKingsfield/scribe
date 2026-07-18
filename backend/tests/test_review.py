@@ -9,7 +9,7 @@ def client(sample_project):
 
 
 def test_create_session(client, sample_project):
-    r = client.post("/api/projects/barrow/review/sessions", json={
+    r = client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Beta Round 1",
         "chapters": ["chapters/01_Chapter_01"],
     })
@@ -25,40 +25,40 @@ def test_create_session(client, sample_project):
 
 
 def test_list_sessions(client, sample_project):
-    client.post("/api/projects/barrow/review/sessions", json={
+    client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 1", "chapters": ["chapters/01_Chapter_01"],
     })
-    client.post("/api/projects/barrow/review/sessions", json={
+    client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 2", "chapters": ["chapters/11_Chapter_11"],
     })
-    r = client.get("/api/projects/barrow/review/sessions")
+    r = client.get("/api/projects/example-novel/review/sessions")
     assert r.status_code == 200
     assert len(r.json()) == 2
 
 
 def test_revoke_session(client, sample_project):
-    r = client.post("/api/projects/barrow/review/sessions", json={
+    r = client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 1", "chapters": ["chapters/01_Chapter_01"],
     })
     sid = r.json()["id"]
-    r2 = client.patch(f"/api/projects/barrow/review/sessions/{sid}", json={"active": False})
+    r2 = client.patch(f"/api/projects/example-novel/review/sessions/{sid}", json={"active": False})
     assert r2.status_code == 200
     assert r2.json()["active"] is False
 
 
 def test_delete_session(client, sample_project):
-    r = client.post("/api/projects/barrow/review/sessions", json={
+    r = client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 1", "chapters": ["chapters/01_Chapter_01"],
     })
     sid = r.json()["id"]
-    r2 = client.delete(f"/api/projects/barrow/review/sessions/{sid}")
+    r2 = client.delete(f"/api/projects/example-novel/review/sessions/{sid}")
     assert r2.status_code == 204
-    r3 = client.get("/api/projects/barrow/review/sessions")
+    r3 = client.get("/api/projects/example-novel/review/sessions")
     assert len(r3.json()) == 0
 
 
 def test_get_manuscript_via_token(client, sample_project):
-    r = client.post("/api/projects/barrow/review/sessions", json={
+    r = client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 1", "chapters": ["chapters/01_Chapter_01"],
     })
     token = r.json()["token"]
@@ -75,12 +75,12 @@ def test_get_manuscript_via_token(client, sample_project):
 
 
 def test_revoked_token_returns_404(client, sample_project):
-    r = client.post("/api/projects/barrow/review/sessions", json={
+    r = client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 1", "chapters": ["chapters/01_Chapter_01"],
     })
     token = r.json()["token"]
     sid = r.json()["id"]
-    client.patch(f"/api/projects/barrow/review/sessions/{sid}", json={"active": False})
+    client.patch(f"/api/projects/example-novel/review/sessions/{sid}", json={"active": False})
     r2 = client.get(f"/api/review/{token}/manuscript")
     assert r2.status_code == 404
 
@@ -91,7 +91,7 @@ def test_invalid_token_returns_404(client):
 
 
 def _create_session(client) -> dict:
-    r = client.post("/api/projects/barrow/review/sessions", json={
+    r = client.post("/api/projects/example-novel/review/sessions", json={
         "name": "Round 1", "chapters": ["chapters/01_Chapter_01"],
     })
     return r.json()

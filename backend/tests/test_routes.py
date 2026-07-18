@@ -13,14 +13,14 @@ def test_list_projects(sample_project: Path) -> None:
     r = client().get("/api/projects")
     assert r.status_code == 200
     items = r.json()
-    assert any(i["slug"] == "barrow" and i["title"] == "The Barrow Path" for i in items)
+    assert any(i["slug"] == "example-novel" and i["title"] == "The Example Novel" for i in items)
 
 
 def test_get_project_tree_nested(sample_project: Path) -> None:
-    r = client().get("/api/projects/barrow")
+    r = client().get("/api/projects/example-novel")
     assert r.status_code == 200
     tree = r.json()
-    assert tree["title"] == "The Barrow Path"
+    assert tree["title"] == "The Example Novel"
     assert len(tree["acts"]) == 1
 
     # Two chapters
@@ -57,7 +57,7 @@ def test_get_project_404(writing_root: Path) -> None:
 
 def test_file_get_put_etag_chapter_meta(sample_project: Path) -> None:
     c = client()
-    r = c.get("/api/projects/barrow/file", params={"path": "chapters/01_Chapter_01/chapter.md"})
+    r = c.get("/api/projects/example-novel/file", params={"path": "chapters/01_Chapter_01/chapter.md"})
     assert r.status_code == 200
     body = r.json()
     etag = body["etag"]
@@ -66,7 +66,7 @@ def test_file_get_put_etag_chapter_meta(sample_project: Path) -> None:
     new_meta = dict(body["frontmatter"])
     new_meta["summary"] = "Updated chapter summary."
     r = c.put(
-        "/api/projects/barrow/file",
+        "/api/projects/example-novel/file",
         params={"path": "chapters/01_Chapter_01/chapter.md"},
         json={"body": body["body"], "frontmatter": new_meta},
         headers={"If-Match": etag},
@@ -76,7 +76,7 @@ def test_file_get_put_etag_chapter_meta(sample_project: Path) -> None:
 
 
 def test_file_get_scene(sample_project: Path) -> None:
-    r = client().get("/api/projects/barrow/file", params={"path": "chapters/01_Chapter_01/01.md"})
+    r = client().get("/api/projects/example-novel/file", params={"path": "chapters/01_Chapter_01/01.md"})
     assert r.status_code == 200
     body = r.json()
     assert body["frontmatter"]["scene"] == 1
@@ -84,14 +84,14 @@ def test_file_get_scene(sample_project: Path) -> None:
 
 
 def test_file_path_escape_rejected(sample_project: Path) -> None:
-    r = client().get("/api/projects/barrow/file", params={"path": "../../etc/passwd"})
+    r = client().get("/api/projects/example-novel/file", params={"path": "../../etc/passwd"})
     assert r.status_code == 400
 
 
 def test_file_create_scene(sample_project: Path) -> None:
     c = client()
     r = c.put(
-        "/api/projects/barrow/file",
+        "/api/projects/example-novel/file",
         params={"path": "chapters/01_Chapter_01/02.md"},
         json={
             "body": "Continuation scene.\n",
@@ -99,7 +99,7 @@ def test_file_create_scene(sample_project: Path) -> None:
         },
     )
     assert r.status_code == 200
-    r = c.get("/api/projects/barrow")
+    r = c.get("/api/projects/example-novel")
     ch1 = r.json()["chapters"][0]
     assert len(ch1["scenes"]) == 2
 
@@ -107,7 +107,7 @@ def test_file_create_scene(sample_project: Path) -> None:
 def test_file_move_scene(sample_project: Path) -> None:
     c = client()
     r = c.post(
-        "/api/projects/barrow/file/move",
+        "/api/projects/example-novel/file/move",
         json={"src": "chapters/11_Chapter_11/02.md", "dst": "chapters/11_Chapter_11/03.md"},
     )
     assert r.status_code == 200
@@ -115,7 +115,7 @@ def test_file_move_scene(sample_project: Path) -> None:
 
 
 def test_sync_manifest(sample_project: Path) -> None:
-    r = client().get("/api/projects/barrow/sync")
+    r = client().get("/api/projects/example-novel/sync")
     assert r.status_code == 200
     paths_seen = {e["path"] for e in r.json()["entries"]}
     assert "chapters/01_Chapter_01/chapter.md" in paths_seen
@@ -135,19 +135,19 @@ def test_init_project(writing_root: Path) -> None:
 
 def test_update_project_acts(sample_project: Path) -> None:
     c = client()
-    r = c.put("/api/projects/barrow", json={"acts": [
+    r = c.put("/api/projects/example-novel", json={"acts": [
         {"name": "Act One", "chapters": [1, 16]},
         {"name": "Act Two", "chapters": [17, 32]},
     ]})
     assert r.status_code == 200
-    r = c.get("/api/projects/barrow")
+    r = c.get("/api/projects/example-novel")
     assert len(r.json()["acts"]) == 2
 
 
 def test_put_etag_mismatch_412_default(sample_project: Path) -> None:
     c = client()
     r = c.put(
-        "/api/projects/barrow/file",
+        "/api/projects/example-novel/file",
         params={"path": "chapters/01_Chapter_01/chapter.md"},
         json={"body": "loser body", "frontmatter": {}},
         headers={"If-Match": "stale-etag-1234"},
@@ -158,7 +158,7 @@ def test_put_etag_mismatch_412_default(sample_project: Path) -> None:
 def test_put_save_as_conflict(sample_project: Path) -> None:
     c = client()
     r = c.put(
-        "/api/projects/barrow/file",
+        "/api/projects/example-novel/file",
         params={"path": "chapters/01_Chapter_01/chapter.md"},
         json={
             "body": "lost-edit body",
@@ -190,7 +190,7 @@ def test_put_save_as_conflict(sample_project: Path) -> None:
 def test_list_and_discard_conflicts(sample_project: Path) -> None:
     c = client()
     r = c.put(
-        "/api/projects/barrow/file",
+        "/api/projects/example-novel/file",
         params={"path": "chapters/01_Chapter_01/chapter.md"},
         json={"body": "x", "frontmatter": {}},
         headers={
@@ -202,7 +202,7 @@ def test_list_and_discard_conflicts(sample_project: Path) -> None:
     assert r.status_code == 200
     cp = r.json()["conflict_path"]
 
-    r = c.get("/api/projects/barrow/conflicts")
+    r = c.get("/api/projects/example-novel/conflicts")
     assert r.status_code == 200
     items = r.json()["conflicts"]
     assert any(it["path"] == cp for it in items)
@@ -210,9 +210,9 @@ def test_list_and_discard_conflicts(sample_project: Path) -> None:
     assert item["canonical_path"] == "chapters/01_Chapter_01/chapter.md"
     assert item["device_id"] == "phone1"
 
-    r = c.delete("/api/projects/barrow/conflicts", params={"path": cp})
+    r = c.delete("/api/projects/example-novel/conflicts", params={"path": cp})
     assert r.status_code == 204
-    r = c.get("/api/projects/barrow/conflicts")
+    r = c.get("/api/projects/example-novel/conflicts")
     assert all(it["path"] != cp for it in r.json()["conflicts"])
 
 
@@ -222,7 +222,7 @@ def test_conflicts_parses_disk_written_conflict(sample_project: Path) -> None:
     conflict_body = "---\nscene: 1\n---\nConflict body.\n"
     conflict_file.write_text(conflict_body, encoding="utf-8")
 
-    r = client().get("/api/projects/barrow/conflicts")
+    r = client().get("/api/projects/example-novel/conflicts")
     assert r.status_code == 200
     items = r.json()["conflicts"]
     match = [it for it in items if it["device_id"] == "abc123"]
@@ -237,7 +237,7 @@ def test_conflicts_parses_disk_written_conflict(sample_project: Path) -> None:
 
 def test_discard_conflict_rejects_canonical(sample_project: Path) -> None:
     r = client().delete(
-        "/api/projects/barrow/conflicts",
+        "/api/projects/example-novel/conflicts",
         params={"path": "chapters/01_Chapter_01/chapter.md"},
     )
     assert r.status_code == 400

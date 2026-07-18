@@ -44,41 +44,12 @@ docker run -d \
 
 Open `http://localhost:3030` and create a project, or set `WRITING_ROOT` to an existing directory of markdown files.
 
-### Development
+## Documentation
 
-Backend:
-```bash
-cd backend
-python3 -m venv .venv
-.venv/bin/pip install -e '.[test]'
-.venv/bin/pytest -q              # run tests
-uvicorn scribe.main:app --reload # dev server on :8000
-```
-
-Frontend:
-```bash
-cd frontend
-npm install
-npm run dev                      # vite dev server on :5173
-npm run build && npm run typecheck  # CI-equivalent build
-```
-
-### Configuration
-
-| Variable | Default | What it does |
-|----------|---------|-------------|
-| `WRITING_ROOT` | `/data/writing` | Where your novel directories live |
-| `APPDATA_ROOT` | `/data/appdata` | App data (git config, RAG recipes) |
-| `ORCHESTRATOR_URL` | `http://localhost:11435` | OpenAI-compatible LLM endpoint for chat and rewrite |
-| `ANTHROPIC_API_KEY` | unset | Enables Claude models in the model picker |
-| `QDRANT_URL` | unset | Qdrant endpoint for RAG queries |
-| `EMBED_URL` | unset | Embedding server for RAG queries |
-| `AUTOCOMMIT_INTERVAL_MIN` | `10` | Minutes between automatic git commits |
-
-## How it's built
-
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) -- data model, backend layers, API, frontend modules, sync engine
-- [DESIGN.md](docs/DESIGN.md) -- architecture decisions and the reasoning behind them
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, data model, module layout, request flow
+- [DESIGN.md](docs/DESIGN.md) — why it's built this way, each trade-off explained
+- [CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md) — module-by-module deep dive into how everything works
+- [Developer's guide](docs/DEVELOPERS_GUIDE.md) — local dev setup, configuration, contributing
 
 ## License
 

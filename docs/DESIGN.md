@@ -153,4 +153,4 @@ Both backend and frontend compute position/ordinal for new chapters. Backend is 
 
 ### Helper model preference
 
-All AI helpers share one `localStorage` key, exposed in the rewrite dialog header and ChapterFlow scene sidecard. The Outline button reads the same key but doesn't expose a picker inline -- the tooltip shows the current value.
+All AI helpers share one `localStorage` key, exposed in the rewrite dialogue header and ChapterFlow scene sidecard. The Outline button reads the same key but doesn't expose a picker inline -- the tooltip shows the current value.

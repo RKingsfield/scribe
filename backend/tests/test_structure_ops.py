@@ -16,7 +16,7 @@ def test_new_chapter_creates_dir_with_two_counter_slug(
     # chapter ordinal = 11. New chapter should land at position 12,
     # ordinal 12.
     r = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"title": "Aftermath"},
     )
     assert r.status_code == 200
@@ -31,7 +31,7 @@ def test_new_chapter_creates_dir_with_two_counter_slug(
 
 def test_new_interlude_creates_dir(sample_project: Path) -> None:
     r = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"kind": "interlude"},
     )
     assert r.status_code == 200
@@ -51,12 +51,12 @@ def test_new_chapter_after_interlude_keeps_chapter_ordinal(
 ) -> None:
     # An interlude bumps position but not chapter ordinal.
     r1 = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"kind": "interlude"},
     )
     assert r1.json()["slug"] == "12_Interlude_01"
     r2 = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"kind": "chapter"},
     )
     body = r2.json()
@@ -67,7 +67,7 @@ def test_new_chapter_after_interlude_keeps_chapter_ordinal(
 
 def test_new_chapter_explicit_slug_still_409s(sample_project: Path) -> None:
     r = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"slug": "01_Chapter_01"},
     )
     assert r.status_code == 409
@@ -77,7 +77,7 @@ def test_new_chapter_takes_over_empty_orphan_dir(sample_project: Path) -> None:
     # Empty orphan at the candidate slug (position 12, ordinal 12) — re-use it.
     orphan = sample_project / "chapters" / "12_Chapter_12"
     orphan.mkdir(parents=True, exist_ok=True)
-    r = c().post("/api/projects/barrow/chapter/new", json={})
+    r = c().post("/api/projects/example-novel/chapter/new", json={})
     assert r.status_code == 200
     body = r.json()
     assert body["slug"] == "12_Chapter_12"
@@ -90,7 +90,7 @@ def test_new_chapter_skips_orphan_with_content(sample_project: Path) -> None:
     orphan = sample_project / "chapters" / "12_Chapter_12"
     orphan.mkdir(parents=True, exist_ok=True)
     (orphan / "stray.md").write_text("important notes\n")
-    r = c().post("/api/projects/barrow/chapter/new", json={})
+    r = c().post("/api/projects/example-novel/chapter/new", json={})
     assert r.status_code == 200
     body = r.json()
     assert body["slug"] != "12_Chapter_12"
@@ -99,7 +99,7 @@ def test_new_chapter_skips_orphan_with_content(sample_project: Path) -> None:
 
 def test_new_chapter_with_act_writes_frontmatter(sample_project: Path) -> None:
     r = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"act": "Act 2"},
     )
     assert r.status_code == 200
@@ -110,21 +110,21 @@ def test_new_chapter_with_act_writes_frontmatter(sample_project: Path) -> None:
 
 
 def test_new_scene_auto_numbers(sample_project: Path) -> None:
-    r = c().post("/api/projects/barrow/chapter/01_Chapter_01/scene/new", json={"title": "Aftermath"})
+    r = c().post("/api/projects/example-novel/chapter/01_Chapter_01/scene/new", json={"title": "Aftermath"})
     assert r.status_code == 200
     assert r.json()["path"] == "chapters/01_Chapter_01/02.md"
-    r = c().post("/api/projects/barrow/chapter/11_Chapter_11/scene/new", json={})
+    r = c().post("/api/projects/example-novel/chapter/11_Chapter_11/scene/new", json={})
     assert r.json()["path"] == "chapters/11_Chapter_11/03.md"
 
 
 def test_delete_chapter(sample_project: Path) -> None:
-    r = c().delete("/api/projects/barrow/chapter/01_Chapter_01")
+    r = c().delete("/api/projects/example-novel/chapter/01_Chapter_01")
     assert r.status_code == 204
     assert not (sample_project / "chapters" / "01_Chapter_01").exists()
 
 
 def test_new_character(sample_project: Path) -> None:
-    r = c().post("/api/projects/barrow/character/new", json={"title": "Asha"})
+    r = c().post("/api/projects/example-novel/character/new", json={"title": "Asha"})
     assert r.status_code == 200
     assert r.json()["path"] == "character-profiles/asha.md"
     assert (sample_project / "character-profiles" / "asha.md").is_file()
@@ -132,7 +132,7 @@ def test_new_character(sample_project: Path) -> None:
 
 def test_new_reference_with_slug(sample_project: Path) -> None:
     r = c().post(
-        "/api/projects/barrow/reference/new",
+        "/api/projects/example-novel/reference/new",
         json={"title": "Geography of Ynniscarr", "slug": "ynn-geo"},
     )
     assert r.status_code == 200
@@ -141,7 +141,7 @@ def test_new_reference_with_slug(sample_project: Path) -> None:
 
 def test_invalid_slug_rejected(sample_project: Path) -> None:
     r = c().post(
-        "/api/projects/barrow/chapter/new",
+        "/api/projects/example-novel/chapter/new",
         json={"chapter": 99, "slug": "../escape"},
     )
     assert r.status_code == 400
@@ -151,7 +151,7 @@ def test_new_character_seeds_order(sample_project: Path) -> None:
     from starlette.testclient import TestClient
     from scribe.main import app
     client = TestClient(app)
-    slug = "barrow"
+    slug = "example-novel"
     r1 = client.post(f"/api/projects/{slug}/character/new", json={"title": "Asha"})
     assert r1.status_code == 200
     p1 = sample_project / r1.json()["path"]
@@ -170,7 +170,7 @@ def test_new_reference_seeds_order(sample_project: Path) -> None:
     from starlette.testclient import TestClient
     from scribe.main import app
     client = TestClient(app)
-    slug = "barrow"
+    slug = "example-novel"
     r1 = client.post(f"/api/projects/{slug}/reference/new", json={"title": "Map"})
     assert r1.status_code == 200
     p1 = sample_project / r1.json()["path"]
@@ -182,7 +182,7 @@ def test_new_reference_seeds_order(sample_project: Path) -> None:
 def test_reorder_updates_order_field(sample_project: Path) -> None:
     cli = c()
     r = cli.post(
-        "/api/projects/barrow/reorder",
+        "/api/projects/example-novel/reorder",
         json={"items": [
             {"path": "chapters/01_Chapter_01/chapter.md", "order": 5.0},
             {"path": "chapters/11_Chapter_11/chapter.md", "order": 3.0},
@@ -190,7 +190,7 @@ def test_reorder_updates_order_field(sample_project: Path) -> None:
     )
     assert r.status_code == 200
     assert r.json()["count"] == 2
-    r = cli.get("/api/projects/barrow")
+    r = cli.get("/api/projects/example-novel")
     chapters = r.json()["chapters"]
     # After reorder, chapter 11 (order=3) comes before chapter 01 (order=5)
     assert chapters[0]["slug"] == "11_Chapter_11"
@@ -202,12 +202,12 @@ def test_reorder_updates_order_field(sample_project: Path) -> None:
 
 def test_reorder_renumbers_interludes_independently(sample_project: Path) -> None:
     cli = c()
-    r = cli.post("/api/projects/barrow/chapter/new", json={"kind": "interlude"})
+    r = cli.post("/api/projects/example-novel/chapter/new", json={"kind": "interlude"})
     assert r.status_code == 200
     int_slug = r.json()["slug"]
     # Swap interlude to position 1, chapters after
     r = cli.post(
-        "/api/projects/barrow/reorder",
+        "/api/projects/example-novel/reorder",
         json={"items": [
             {"path": f"chapters/{int_slug}/chapter.md", "order": 1.0},
             {"path": "chapters/01_Chapter_01/chapter.md", "order": 2.0},
@@ -215,7 +215,7 @@ def test_reorder_renumbers_interludes_independently(sample_project: Path) -> Non
         ]},
     )
     assert r.status_code == 200
-    r = cli.get("/api/projects/barrow")
+    r = cli.get("/api/projects/example-novel")
     chapters = r.json()["chapters"]
     assert chapters[0]["slug"] == int_slug
     assert chapters[0]["interlude"] == 1
@@ -226,22 +226,22 @@ def test_reorder_renumbers_interludes_independently(sample_project: Path) -> Non
 def test_reorder_writes_act_field(sample_project: Path) -> None:
     cli = c()
     r = cli.post(
-        "/api/projects/barrow/reorder",
+        "/api/projects/example-novel/reorder",
         json={"items": [
             {"path": "chapters/01_Chapter_01/chapter.md", "order": 1.0, "act": "Act Two"},
         ]},
     )
     assert r.status_code == 200
-    r = cli.get("/api/projects/barrow")
+    r = cli.get("/api/projects/example-novel")
     ch1 = next(c for c in r.json()["chapters"] if c["slug"] == "01_Chapter_01")
     assert ch1["act"] == "Act Two"
     # Clearing with empty string
     r = cli.post(
-        "/api/projects/barrow/reorder",
+        "/api/projects/example-novel/reorder",
         json={"items": [{"path": "chapters/01_Chapter_01/chapter.md", "order": 1.0, "act": ""}]},
     )
     assert r.status_code == 200
-    r = cli.get("/api/projects/barrow")
+    r = cli.get("/api/projects/example-novel")
     ch1 = next(c for c in r.json()["chapters"] if c["slug"] == "01_Chapter_01")
     assert ch1["act"] is None
 
@@ -257,7 +257,7 @@ def _move(cli, **overrides) -> "Response":  # type: ignore[name-defined]
         "dst_order": [],
     }
     payload.update(overrides)
-    return cli.post("/api/projects/barrow/scene/move", json=payload)
+    return cli.post("/api/projects/example-novel/scene/move", json=payload)
 
 
 def test_move_scene_happy_path(sample_project: Path) -> None:

@@ -20,7 +20,7 @@ def client() -> TestClient:
 
 
 def test_collection_name_uses_scribe_prefix() -> None:
-    assert collection_name("the-barrow-path") == "scribe-the-barrow-path"
+    assert collection_name("the-example-novel") == "scribe-the-example-novel"
 
 
 def test_build_recipe_has_dynamic_sources_with_kind_metadata(tmp_path: Path) -> None:
@@ -140,17 +140,17 @@ def test_rag_state_when_no_recipe_and_no_collection(
     _patch_httpx(
         monkeypatch,
         {
-            ("GET", "/collections/scribe-barrow"): _FakeResp(404, {}),
+            ("GET", "/collections/scribe-example-novel"): _FakeResp(404, {}),
         },
     )
-    r = client().get("/api/projects/barrow/rag")
+    r = client().get("/api/projects/example-novel/rag")
     assert r.status_code == 200
     data = r.json()
-    assert data["collection"] == "scribe-barrow"
+    assert data["collection"] == "scribe-example-novel"
     assert data["recipe_exists"] is False
     assert data["qdrant"]["exists"] is False
-    assert data["recipe_path"].endswith("/scribe/barrow.yml")
-    assert "llm-rag ingest scribe/barrow" in data["ingest_command"]
+    assert data["recipe_path"].endswith("/scribe/example-novel.yml")
+    assert "llm-rag ingest scribe/example-novel" in data["ingest_command"]
 
 
 def test_rag_state_when_collection_exists(
@@ -160,7 +160,7 @@ def test_rag_state_when_collection_exists(
     _patch_httpx(
         monkeypatch,
         {
-            ("GET", "/collections/scribe-barrow"): _FakeResp(
+            ("GET", "/collections/scribe-example-novel"): _FakeResp(
                 200,
                 {
                     "result": {
@@ -174,7 +174,7 @@ def test_rag_state_when_collection_exists(
             ),
         },
     )
-    r = client().get("/api/projects/barrow/rag")
+    r = client().get("/api/projects/example-novel/rag")
     assert r.status_code == 200
     qd = r.json()["qdrant"]
     assert qd["exists"] is True
@@ -192,16 +192,16 @@ def test_put_recipe_writes_yaml_to_recipes_dir(
     recipes_dir = tmp_path / "recipes"
     monkeypatch.setattr(config, "RAG_RECIPES_DIR", recipes_dir)
     monkeypatch.setattr(config, "RAG_HOST_WRITING_ROOT", writing_root)
-    r = client().put("/api/projects/barrow/rag/recipe")
+    r = client().put("/api/projects/example-novel/rag/recipe")
     assert r.status_code == 200
     data = r.json()
     assert data["written"] is True
     on_disk = Path(data["recipe_path"])
     assert on_disk.is_file()
     parsed = yaml.safe_load(on_disk.read_text(encoding="utf-8"))
-    assert parsed["corpus"] == "scribe-barrow"
+    assert parsed["corpus"] == "scribe-example-novel"
     assert any(
-        s["path"] == f"{writing_root}/barrow/chapters" for s in parsed["sources"]
+        s["path"] == f"{writing_root}/example-novel/chapters" for s in parsed["sources"]
     )
 
 
@@ -214,10 +214,10 @@ def test_delete_collection_proxies_to_qdrant(
     fake = _patch_httpx(
         monkeypatch,
         {
-            ("DELETE", "/collections/scribe-barrow"): _FakeResp(200, {"status": "ok"}),
+            ("DELETE", "/collections/scribe-example-novel"): _FakeResp(200, {"status": "ok"}),
         },
     )
-    r = client().delete("/api/projects/barrow/rag/collection")
+    r = client().delete("/api/projects/example-novel/rag/collection")
     assert r.status_code == 204
     methods = [c[0] for c in fake.calls]
     assert "DELETE" in methods
@@ -227,10 +227,10 @@ def test_delete_collection_tolerates_404(sample_project: Path, monkeypatch) -> N
     _patch_httpx(
         monkeypatch,
         {
-            ("DELETE", "/collections/scribe-barrow"): _FakeResp(404, {}),
+            ("DELETE", "/collections/scribe-example-novel"): _FakeResp(404, {}),
         },
     )
-    r = client().delete("/api/projects/barrow/rag/collection")
+    r = client().delete("/api/projects/example-novel/rag/collection")
     assert r.status_code == 204
 
 
@@ -244,7 +244,7 @@ def test_query_returns_hits_from_qdrant_search(
         monkeypatch,
         {
             ("POST", "/embed"): _FakeResp(200, {"vectors": [[0.1] * 8]}),
-            ("POST", "/collections/scribe-barrow/points/search"): _FakeResp(
+            ("POST", "/collections/scribe-example-novel/points/search"): _FakeResp(
                 200,
                 {
                     "result": [
@@ -263,7 +263,7 @@ def test_query_returns_hits_from_qdrant_search(
         },
     )
     r = client().post(
-        "/api/projects/barrow/rag/query",
+        "/api/projects/example-novel/rag/query",
         json={"text": "Who tested the axe?", "limit": 5},
     )
     assert r.status_code == 200
@@ -278,15 +278,15 @@ def test_query_404_when_collection_missing(sample_project: Path, monkeypatch) ->
         monkeypatch,
         {
             ("POST", "/embed"): _FakeResp(200, {"vectors": [[0.0] * 8]}),
-            ("POST", "/collections/scribe-barrow/points/search"): _FakeResp(404, {}),
+            ("POST", "/collections/scribe-example-novel/points/search"): _FakeResp(404, {}),
         },
     )
     r = client().post(
-        "/api/projects/barrow/rag/query", json={"text": "anything"}
+        "/api/projects/example-novel/rag/query", json={"text": "anything"}
     )
     assert r.status_code == 404
 
 
 def test_query_rejects_empty_text(sample_project: Path) -> None:
-    r = client().post("/api/projects/barrow/rag/query", json={"text": "  "})
+    r = client().post("/api/projects/example-novel/rag/query", json={"text": "  "})
     assert r.status_code == 400

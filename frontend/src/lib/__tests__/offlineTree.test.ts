@@ -46,8 +46,8 @@ function makeTree(): ProjectTree {
   };
 
   return {
-    slug: 'the-barrow-path',
-    title: 'The Barrow Path',
+    slug: 'the-example-novel',
+    title: 'The Example Novel',
     author: 'Author',
     rag_recipe: null,
     default_model: 'claude-3-7-sonnet',
@@ -264,8 +264,8 @@ describe('isOfflinePath', () => {
 
 function makeTwoChapterTree(): ProjectTree {
   return {
-    slug: 'the-barrow-path',
-    title: 'The Barrow Path',
+    slug: 'the-example-novel',
+    title: 'The Example Novel',
     author: 'Author',
     rag_recipe: null,
     default_model: 'claude-3-7-sonnet',
