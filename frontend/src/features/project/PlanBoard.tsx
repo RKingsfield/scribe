@@ -25,7 +25,6 @@ import {
   ChapterEntry,
   ProjectTree,
   SceneEntry,
-  deleteFile,
   summarizeFile,
   updateProject,
 } from '../../lib/api';
@@ -322,8 +321,8 @@ function OutlineGrid({
           });
         }
         onTreeChanged();
-      } catch (err) {
-        console.error('Scene move failed', err);
+      } catch {
+        // error already shown to user
       }
       return;
     }
@@ -336,8 +335,8 @@ function OutlineGrid({
     try {
       await syncEngine.reorderItems(slug, result.payload);
       onTreeChanged();
-    } catch (err) {
-      console.error('Chapter reorder failed', err);
+    } catch {
+      // error already shown to user
     }
   };
 
@@ -699,7 +698,7 @@ function SceneRow({
       if (!window.confirm(`Delete ${label}?`)) return;
     }
     try {
-      await deleteFile(slug, scene.path);
+      await syncEngine.deleteScene(slug, scene.path);
       onTreeChanged();
     } catch (err) {
       toast(`Failed to delete scene: ${err}`, 'error');
@@ -896,7 +895,7 @@ function pickLatestChapter(tree: ProjectTree): ChapterEntry | null {
   if (tree.chapters.length === 0) return null;
   let best: ChapterEntry = tree.chapters[0];
   for (const c of tree.chapters) {
-    if ((c.chapter ?? -1) > (best.chapter ?? -1)) best = c;
+    if ((c.order ?? -1) > (best.order ?? -1)) best = c;
   }
   return best;
 }

@@ -151,6 +151,26 @@ export function removeChapterFromTree(tree: ProjectTree, chapterSlug: string): P
   return { ...tree, chapters: tree.chapters.filter(c => c.slug !== chapterSlug) };
 }
 
+export function removeSceneFromTree(tree: ProjectTree, scenePath: string): ProjectTree {
+  return {
+    ...tree,
+    chapters: tree.chapters.map(ch => ({
+      ...ch,
+      scenes: ch.scenes.filter(s => s.path !== scenePath),
+    })),
+  };
+}
+
+export function removeCategoryEntryFromTree(tree: ProjectTree, path: string): ProjectTree {
+  return {
+    ...tree,
+    categories: tree.categories.map(cat => ({
+      ...cat,
+      entries: cat.entries.filter(e => e.path !== path),
+    })),
+  };
+}
+
 export interface ReorderItem {
   path: string;
   order: number;

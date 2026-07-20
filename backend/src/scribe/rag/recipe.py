@@ -36,7 +36,7 @@ def build_recipe(
         sources.append({
             "type": "directory",
             "path": f"{host_project}/{child.name}",
-            "include": ["**/*.md"],
+            "include": ["*.md"],
             "metadata": {"kind": child.name, "project": slug},
         })
 

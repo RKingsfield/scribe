@@ -393,7 +393,7 @@ export function WriteView() {
           open={!!rewriteSel}
           onClose={() => setRewriteSel(null)}
           onAccept={(rewrite) => {
-            editorRef.current?.replaceRange(rewriteSel.from, rewriteSel.to, rewrite);
+            (inFlowMode ? flowRef.current : editorRef.current)?.replaceRange(rewriteSel.from, rewriteSel.to, rewrite);
           }}
           models={models}
           model={helperModel}

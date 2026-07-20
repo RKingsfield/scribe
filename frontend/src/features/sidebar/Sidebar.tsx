@@ -25,7 +25,6 @@ import {
   ProjectTree,
   ReferenceEntry,
   SceneEntry,
-  deleteFile,
 } from '../../lib/api';
 import { syncEngine } from '../../lib/syncEngine';
 import { isOfflinePath } from '../../lib/offlineTree';
@@ -167,9 +166,8 @@ export function Sidebar({
           });
         }
         onTreeChanged();
-      } catch (err) {
+      } catch {
         setSceneOverrides({});
-        console.error('Scene move failed', err);
       }
       return;
     }
@@ -698,8 +696,7 @@ function SortableSceneRow(props: {
             e.stopPropagation();
             if (!confirm(`Delete scene ${props.scene.scene}?`)) return;
             try {
-              await deleteFile(props.slug, props.scene.path);
-              await syncEngine.getTree(props.slug, true);
+              await syncEngine.deleteScene(props.slug, props.scene.path);
               props.onTreeChanged();
             } catch (err) {
               toast(`Failed to delete: ${err}`, 'error');
@@ -765,7 +762,7 @@ function RefList({
       await syncEngine.reorderItems(slug, reordered.map((r, i) => ({ path: r.path, order: i + 1 })));
       onTreeChanged();
     } catch (err) {
-      console.error('Ref reorder failed', err);
+      toast(`Reorder failed: ${err}`, 'error');
     }
   };
 
@@ -859,7 +856,7 @@ function RefRow({
     e.stopPropagation();
     if (!window.confirm(`Delete ${item.title || item.path}?`)) return;
     try {
-      await deleteFile(slug, item.path);
+      await syncEngine.deleteCategoryEntry(slug, item.path);
       onTreeChanged();
     } catch (err) {
       toast(`Failed: ${err}`, 'error');

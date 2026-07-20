@@ -13,7 +13,7 @@ import '@fontsource/inter/500.css';
 import '@fontsource/inter/600.css';
 import '@fontsource/jetbrains-mono/400.css';
 
-import './styles.css';
+import './styles/index.css';
 
 const savedTheme = localStorage.getItem('scribe.theme');
 if (savedTheme === 'light' || savedTheme === 'dark') {

@@ -19,6 +19,7 @@ vi.mock('../api', async () => {
     newScene: vi.fn(),
     newCategoryEntry: vi.fn(),
     deleteChapter: vi.fn(),
+    deleteFile: vi.fn(),
     reorder: vi.fn(),
     moveScene: vi.fn(),
     isNetworkError: actual.isNetworkError,
@@ -823,5 +824,167 @@ describe('syncEngine network-error detection', () => {
 
     const cached = await db.cache.where('slug').equals('proj').toArray();
     expect(cached.some(c => c.path.includes('_offline_') || c.key.includes('_offline_'))).toBe(false);
+  });
+});
+
+describe('syncEngine deleteScene / deleteCategoryEntry', () => {
+  const baseTree = {
+    slug: 'proj',
+    title: 'Test Project',
+    author: null,
+    rag_recipe: null,
+    default_model: 'x',
+    acts: [],
+    chapters: [
+      {
+        path: 'chapters/01_Chapter_01',
+        meta_path: 'chapters/01_Chapter_01/chapter.md',
+        slug: '01_Chapter_01',
+        kind: 'chapter' as const,
+        title: 'Chapter 1',
+        summary: null,
+        chapter: 1,
+        interlude: null,
+        order: 1,
+        pov: null,
+        status: null,
+        words_target: null,
+        act: null,
+        scenes: [
+          {
+            path: 'chapters/01_Chapter_01/01.md',
+            title: 'Scene 1',
+            summary: null,
+            scene: 1,
+            order: 1,
+            pov: null,
+            status: null,
+            words_target: null,
+            word_count: 10,
+          },
+          {
+            path: 'chapters/01_Chapter_01/02.md',
+            title: 'Scene 2',
+            summary: null,
+            scene: 2,
+            order: 2,
+            pov: null,
+            status: null,
+            words_target: null,
+            word_count: 5,
+          },
+        ],
+        word_count: 15,
+      },
+    ],
+    categories: [
+      {
+        name: 'Characters',
+        folder: 'characters',
+        codex: true,
+        entries: [
+          { path: 'characters/asha.md', title: 'Asha', aliases: [], tags: [], order: 1 },
+        ],
+      },
+    ],
+  };
+
+  beforeEach(async () => {
+    vi.clearAllMocks();
+    await clearAllTables();
+    (navigator as { onLine: boolean }).onLine = true;
+    await db.trees.put({ slug: 'proj', tree: baseTree, cachedAt: Date.now() });
+  });
+
+  afterEach(async () => {
+    await clearAllTables();
+  });
+
+  it('deleteScene calls the API, updates the cached tree, cleans IDB, and refreshes from the server', async () => {
+    const api = await import('../api');
+    vi.mocked(api.deleteFile).mockResolvedValueOnce(undefined);
+    vi.mocked(api.getProject).mockResolvedValueOnce({
+      ...baseTree,
+      chapters: [{ ...baseTree.chapters[0], scenes: [baseTree.chapters[0].scenes[1]] }],
+    });
+
+    await db.cache.put({
+      key: fileKey('proj', 'chapters/01_Chapter_01/01.md'),
+      slug: 'proj',
+      path: 'chapters/01_Chapter_01/01.md',
+      body: 'text',
+      frontmatter: {},
+      serverEtag: 'e1',
+      cachedAt: Date.now(),
+    });
+    await db.pending.add({
+      slug: 'proj',
+      path: 'chapters/01_Chapter_01/01.md',
+      body: 'text',
+      frontmatter: {},
+      baseEtag: 'e1',
+      queuedAt: Date.now(),
+      attempts: 0,
+    });
+
+    await syncEngine.deleteScene('proj', 'chapters/01_Chapter_01/01.md');
+
+    expect(api.deleteFile).toHaveBeenCalledWith('proj', 'chapters/01_Chapter_01/01.md');
+
+    const cached = await db.cache.get(fileKey('proj', 'chapters/01_Chapter_01/01.md'));
+    expect(cached).toBeUndefined();
+
+    const pending = await db.pending
+      .where({ slug: 'proj', path: 'chapters/01_Chapter_01/01.md' })
+      .toArray();
+    expect(pending).toHaveLength(0);
+
+    expect(api.getProject).toHaveBeenCalledWith('proj');
+
+    const finalTree = await syncEngine.getCachedTree('proj');
+    expect(finalTree!.chapters[0].scenes.map(s => s.path)).toEqual([
+      'chapters/01_Chapter_01/02.md',
+    ]);
+  });
+
+  it('deleteScene throws and leaves the cached tree untouched when the API call fails', async () => {
+    const api = await import('../api');
+    vi.mocked(api.deleteFile).mockRejectedValueOnce(new Error('500 Internal Server Error'));
+
+    await expect(
+      syncEngine.deleteScene('proj', 'chapters/01_Chapter_01/01.md'),
+    ).rejects.toThrow('500 Internal Server Error');
+
+    const tree = await syncEngine.getCachedTree('proj');
+    expect(tree!.chapters[0].scenes).toHaveLength(2);
+  });
+
+  it('deleteCategoryEntry calls the API, updates the cached tree, and cleans IDB', async () => {
+    const api = await import('../api');
+    vi.mocked(api.deleteFile).mockResolvedValueOnce(undefined);
+    vi.mocked(api.getProject).mockResolvedValueOnce({
+      ...baseTree,
+      categories: [{ ...baseTree.categories[0], entries: [] }],
+    });
+
+    await db.cache.put({
+      key: fileKey('proj', 'characters/asha.md'),
+      slug: 'proj',
+      path: 'characters/asha.md',
+      body: 'text',
+      frontmatter: {},
+      serverEtag: 'e1',
+      cachedAt: Date.now(),
+    });
+
+    await syncEngine.deleteCategoryEntry('proj', 'characters/asha.md');
+
+    expect(api.deleteFile).toHaveBeenCalledWith('proj', 'characters/asha.md');
+
+    const cached = await db.cache.get(fileKey('proj', 'characters/asha.md'));
+    expect(cached).toBeUndefined();
+
+    const finalTree = await syncEngine.getCachedTree('proj');
+    expect(finalTree!.categories[0].entries).toHaveLength(0);
   });
 });

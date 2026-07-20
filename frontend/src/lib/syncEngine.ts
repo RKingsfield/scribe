@@ -6,6 +6,8 @@ import {
   addSceneToTree,
   addCategoryEntryToTree,
   removeChapterFromTree,
+  removeSceneFromTree,
+  removeCategoryEntryFromTree,
   applyReorderToTree,
   remapTempPaths,
   moveSceneInTree,
@@ -23,6 +25,7 @@ import {
   newScene as apiNewScene,
   newCategoryEntry as apiNewCategoryEntry,
   deleteChapter as apiDeleteChapter,
+  deleteFile as apiDeleteFile,
   reorder as apiReorder,
   moveScene as apiMoveScene,
   isNetworkError,
@@ -384,6 +387,40 @@ class SyncEngine {
     const updated = removeChapterFromTree(tree, chapterSlug);
     await this.putCachedTree(slug, updated);
     await this.queueStructureOp(slug, 'delete-chapter', { chapterSlug }, chapterSlug);
+  }
+
+  /**
+   * Delete a scene. Online-only — no offline queue.
+   */
+  async deleteScene(slug: string, scenePath: string): Promise<void> {
+    await apiDeleteFile(slug, scenePath);
+
+    const tree = await this.getCachedTree(slug);
+    if (tree) {
+      await this.putCachedTree(slug, removeSceneFromTree(tree, scenePath));
+    }
+
+    await db.cache.delete(fileKey(slug, scenePath));
+    await db.pending.where({ slug, path: scenePath }).delete();
+
+    await this.getTree(slug, true);
+  }
+
+  /**
+   * Delete a category entry. Online-only — no offline queue.
+   */
+  async deleteCategoryEntry(slug: string, path: string): Promise<void> {
+    await apiDeleteFile(slug, path);
+
+    const tree = await this.getCachedTree(slug);
+    if (tree) {
+      await this.putCachedTree(slug, removeCategoryEntryFromTree(tree, path));
+    }
+
+    await db.cache.delete(fileKey(slug, path));
+    await db.pending.where({ slug, path }).delete();
+
+    await this.getTree(slug, true);
   }
 
   async reorderItems(

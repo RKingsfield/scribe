@@ -1,0 +1,339 @@
+/* ============================================================
+   editor surface
+   ============================================================ */
+
+.editor-frame {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  position: relative;
+  overflow: hidden;
+}
+.editor-pane {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  justify-content: center;
+  scroll-padding-top: 3.5rem;
+}
+.editor-column {
+  width: 100%;
+  max-width: var(--editor-measure);
+  padding: 2.5rem 2rem 4rem;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 100%;
+}
+
+.editor-host {
+  flex: 1;
+  min-height: 60vh;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.cm-editor {
+  background: transparent !important;
+  height: 100%;
+  min-width: 0;
+}
+.cm-editor.cm-focused { outline: none; }
+.cm-editor .cm-content {
+  font-family: var(--font-body);
+  font-size: var(--editor-size);
+  line-height: var(--editor-leading);
+  color: var(--fg);
+  padding: 0;
+  caret-color: var(--accent);
+}
+.cm-editor .cm-line { padding: 0; }
+.cm-gutters { display: none; }   /* line numbers off — writing surface */
+.cm-activeLine { background: transparent !important; }
+
+.cm-typewriter .cm-content {
+  padding-top: 45vh !important;
+  padding-bottom: 45vh !important;
+}
+
+/* fallback heading sizes if liveMarkdown decorations apply */
+.cm-md-h1 { font-size: 1.7em; font-weight: 700; line-height: 1.25; }
+.cm-md-h2 { font-size: 1.45em; font-weight: 700; line-height: 1.3; }
+.cm-md-h3 { font-size: 1.22em; font-weight: 700; line-height: 1.35; }
+.cm-md-h4 { font-size: 1.1em; font-weight: 700; }
+.cm-md-h5, .cm-md-h6 { font-weight: 700; }
+
+.cm-scene-beat {
+  background: var(--accent-soft);
+  border-left: 2px solid var(--accent);
+  padding: 0 0.3em;
+  color: var(--accent-strong);
+  font-style: italic;
+  font-family: var(--font-ui);
+  font-size: 0.92em;
+}
+
+.cm-codex-link {
+  border-bottom: 1px dotted var(--info);
+  cursor: pointer;
+}
+.cm-codex-link:hover {
+  background: var(--info-soft);
+}
+
+/* ============================================================
+   chapter-flow (multi-scene view)
+   ============================================================ */
+
+.write-shell[data-flow='on'] .editor-column {
+  max-width: 1180px;
+  padding: 2.5rem 1.5rem 4rem;
+}
+
+.chapter-flow {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+.cf-search-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  margin-bottom: 0.75rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.cf-search-bar input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--fg);
+  font-size: var(--text-sm);
+  outline: none;
+}
+.cf-search-count {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  white-space: nowrap;
+}
+.cm-searchMatch {
+  background: #ffe234;
+  color: #000;
+  border-radius: 2px;
+}
+.cm-searchMatch-selected {
+  background: #ff5722;
+  color: #fff;
+  border-radius: 2px;
+  box-shadow: 0 0 0 2px #ff5722;
+}
+.chapter-flow-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.85rem;
+  border-bottom: 1px solid var(--border);
+}
+.chapter-flow-head .cf-eyebrow {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--fg-dim);
+  font-weight: 600;
+}
+.chapter-flow-head h2 {
+  font-family: var(--font-body);
+  font-size: 1.5rem;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: -0.01em;
+}
+.cf-title-editable {
+  cursor: text;
+}
+.cf-title-editable:hover {
+  color: var(--accent);
+}
+.cf-title-input {
+  font-family: var(--font-body);
+  font-size: 1.5rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--accent);
+  color: var(--fg);
+  outline: none;
+  width: 100%;
+  padding: 0;
+  margin: 0;
+}
+.chapter-flow-head .cf-meta {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.scene-block {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 2rem;
+  align-items: start;
+  padding: 0.5rem 0;
+  scroll-margin-top: 3.5rem;
+}
+.scene-block-editor {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.scene-block-editor .cm-editor { min-height: auto; }
+.scene-block-editor .cm-content { min-height: 8rem; }
+
+.scene-block.active .scene-sidecard {
+  border-color: var(--accent);
+}
+
+.scene-divider {
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem 0;
+  color: var(--fg-dim);
+  font-size: 0.85rem;
+  letter-spacing: 1.5em;
+  text-indent: 1.5em;
+}
+.scene-divider span {
+  display: inline-flex;
+  align-items: center;
+  gap: 1.5em;
+}
+.scene-divider span::before,
+.scene-divider span::after {
+  content: '';
+  width: 3rem;
+  height: 1px;
+  background: var(--border);
+}
+
+.chapter-flow-foot {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+}
+.chapter-flow-foot .oc-add-scene-empty {
+  background: transparent;
+  border: 1px dashed var(--border);
+  color: var(--fg-mid);
+  padding: 0.6rem;
+  border-radius: var(--radius-sm);
+  font-size: var(--text-sm);
+  cursor: pointer;
+  width: 100%;
+}
+.chapter-flow-foot .oc-add-scene-empty:hover { color: var(--fg); border-color: var(--fg-mid); }
+
+.scene-sidecard {
+  position: sticky;
+  top: 0.5rem;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 0.85rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  font-family: var(--font-ui);
+}
+.scene-sidecard .ssc-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.4rem;
+}
+.scene-sidecard .ssc-eyebrow {
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--fg-dim);
+  font-weight: 600;
+}
+.scene-sidecard .ssc-words {
+  margin-left: auto;
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  font-variant-numeric: tabular-nums;
+}
+.scene-sidecard .ssc-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.scene-sidecard .ssc-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+.scene-sidecard .ssc-label {
+  font-size: var(--text-xs);
+  color: var(--fg-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+}
+.scene-sidecard .ssc-label.dim { text-transform: none; letter-spacing: 0; font-weight: 400; font-size: var(--text-xs); }
+.scene-sidecard input,
+.scene-sidecard textarea,
+.scene-sidecard select {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.35rem 0.5rem;
+  color: var(--fg);
+  font-family: inherit;
+  font-size: var(--text-sm);
+  width: 100%;
+  box-sizing: border-box;
+}
+.scene-sidecard textarea { resize: vertical; line-height: 1.4; }
+.scene-sidecard input:focus,
+.scene-sidecard textarea:focus,
+.scene-sidecard select:focus { outline: none; border-color: var(--accent); }
+.scene-sidecard .ssc-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.scene-sidecard .ssc-foot {
+  margin-top: 0.25rem;
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+}
+
+@media (max-width: 900px) {
+  .scene-block {
+    grid-template-columns: 1fr;
+  }
+  .scene-sidecard { position: static; }
+}
+
+
+.editor-empty {
+  margin: auto;
+  color: var(--fg-dim);
+  font-family: var(--font-body);
+  font-size: var(--text-lg);
+  text-align: center;
+  padding: 2rem;
+}

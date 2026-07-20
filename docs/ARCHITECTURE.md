@@ -152,7 +152,7 @@ Keyboard shortcuts: Mod-B/I/Shift-X/E for bold/italic/strikethrough/code, Mod-Sh
 
 ### Styling
 
-Single `styles.css` with CSS variables. Dark default (warm charcoal), light "paper" mode (warm cream). Toggle persisted in localStorage.
+Feature-scoped CSS files under `styles/`, imported via `styles/index.css` in cascade order (tokens first, responsive last). CSS variables in `tokens.css`. Dark default (warm charcoal), light "paper" mode (warm cream). Toggle persisted in localStorage.
 
 ## Sync and offline
 

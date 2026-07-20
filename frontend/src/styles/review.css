@@ -1,0 +1,299 @@
+/* ============================================================
+   review view
+   ============================================================ */
+
+.review-view {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+.review-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.review-toolbar select {
+  padding: 0.3rem 0.5rem;
+  font-size: var(--text-sm);
+  max-width: 14rem;
+}
+.review-create-panel {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.review-chapter-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: var(--text-sm);
+}
+.review-select-all {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.25rem;
+}
+.review-chapter-picker label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+}
+.review-create-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* shared manuscript + comment layout */
+.review-layout {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  min-height: 0;
+  overflow: hidden;
+}
+.review-manuscript {
+  overflow-y: auto;
+  padding: 3rem 2.5rem 6rem;
+  max-width: 900px;
+  margin: 0 auto;
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: var(--editor-size);
+  line-height: var(--editor-leading);
+  color: var(--fg);
+}
+.review-title-page {
+  text-align: center;
+  margin-bottom: 3rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+.review-title-page h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 0.5rem;
+}
+.review-author {
+  font-style: italic;
+  color: var(--fg-mid);
+  margin: 0;
+}
+.review-chapter h2 {
+  font-size: 1.4em;
+  font-weight: 700;
+  margin: 2.5rem 0 1rem;
+  letter-spacing: -0.01em;
+}
+.review-chapter p {
+  margin: 0.8em 0;
+}
+.scene-break {
+  border: none;
+  text-align: center;
+  margin: 2rem 0;
+  color: var(--fg-dim);
+}
+.scene-break::after {
+  content: '***';
+  letter-spacing: 0.5em;
+}
+
+mark.review-highlight {
+  background: var(--accent-soft);
+  cursor: pointer;
+  border-radius: 2px;
+}
+mark.review-highlight:hover {
+  background: color-mix(in oklab, var(--accent), transparent 60%);
+}
+
+/* comment rail */
+.comment-rail {
+  border-left: 1px solid var(--border);
+  background: var(--surface);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+}
+.comment-rail-header {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.comment-rail-count {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.comment-rail-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.comment-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.6rem 0.75rem;
+  cursor: pointer;
+  transition: border-color 0.1s;
+  font-size: var(--text-sm);
+}
+.comment-card:hover { border-color: var(--border-strong); }
+.comment-card.active { border-color: var(--accent); }
+.comment-card.resolved { opacity: 0.5; }
+.comment-card-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-xs);
+  margin-bottom: 0.3rem;
+}
+.comment-author { font-weight: 600; }
+.comment-time { color: var(--fg-dim); }
+.comment-quote {
+  margin: 0.3rem 0;
+  padding-left: 0.6rem;
+  border-left: 2px solid var(--accent);
+  color: var(--fg-mid);
+  font-style: italic;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.comment-text {
+  margin: 0.3rem 0 0;
+  line-height: 1.45;
+}
+
+/* floating comment composer */
+.comment-composer {
+  position: absolute;
+  z-index: 60;
+  width: min(360px, 90vw);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.comment-composer textarea {
+  width: 100%;
+  resize: vertical;
+  min-height: 60px;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem;
+}
+.comment-composer textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.comment-composer-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+}
+
+/* beta reader shell */
+.beta-reader-shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+.beta-reader-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1.25rem;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, var(--surface-2), var(--surface));
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+.beta-reader-brand {
+  font-family: var(--font-body);
+  font-weight: 600;
+  font-size: var(--text-md);
+  letter-spacing: -0.01em;
+}
+.beta-reader-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.beta-reader-name-prompt {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+}
+.beta-reader-name-card {
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 2rem;
+  max-width: 400px;
+  width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+.beta-reader-name-card h2 {
+  font-family: var(--font-body);
+  font-weight: 600;
+  margin: 0;
+}
+.beta-reader-name-card input {
+  text-align: center;
+  font-size: var(--text-md);
+}
+
+/* review mobile */
+@media (max-width: 640px) {
+  .review-layout {
+    grid-template-columns: 1fr;
+  }
+  .comment-rail {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    max-height: 40vh;
+  }
+  .review-manuscript {
+    padding: 1.5rem 1rem 3rem;
+  }
+}
