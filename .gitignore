@@ -16,3 +16,7 @@ tsconfig.tsbuildinfo
 .DS_Store
 .idea/
 .vscode/
+
+# codebase-review working docs
+REVIEW.md
+REFACTOR-PLAN.md

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +26,16 @@ def test_compose_includes_title_page_and_chapter_headings(sample_project: Path) 
     assert "Tarn tested his axe balance." in md
     # chapter 11 has two scenes — expect a *** between them
     assert "***" in md
+
+
+def test_compose_excludes_conflict_files(sample_project: Path) -> None:
+    proj = sample_project
+    conflict = proj / "chapters" / "01_Chapter_01" / "01.conflict.dev.20260101T000000Z.md"
+    conflict.write_text(
+        "---\nscene: 1\norder: 1\n---\nConflicting body text.\n", encoding="utf-8"
+    )
+    md = compose_manuscript("example-novel")
+    assert "Conflicting body text" not in md
 
 
 def test_compose_drops_frontmatter(sample_project: Path) -> None:

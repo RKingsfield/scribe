@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 LEADING_NUM_RE = re.compile(r"^(\d+)")
 SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -11,12 +12,19 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 ORDER_FALLBACK = 1e9
 
 
+def coerce_order(v: object) -> float | None:
+    try:
+        return float(v)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return None
+
+
 def slugify(text: str) -> str:
     s = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
     return s or "untitled"
 
 
-def classify_chapter_kind(meta: dict) -> str:
+def classify_chapter_kind(meta: dict[str, Any]) -> str:
     kind = meta.get("kind")
     return kind if kind in ("chapter", "interlude") else "chapter"
 

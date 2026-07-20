@@ -25,6 +25,7 @@ import {
   deleteChapter as apiDeleteChapter,
   reorder as apiReorder,
   moveScene as apiMoveScene,
+  isNetworkError,
 } from './api';
 
 const PROJECT_LIST_TIMEOUT_MS = 3000;
@@ -46,6 +47,18 @@ export interface SyncSnapshot {
 }
 
 type Listener = (s: SyncSnapshot) => void;
+
+function mapTempPath(
+  path: string,
+  tempPrefix: string,
+  target: { slug: string; meta_path: string; first_scene_path: string },
+): string | null {
+  if (!path.startsWith(tempPrefix)) return null;
+  const rest = path.slice(tempPrefix.length);
+  if (rest === 'chapter.md') return target.meta_path;
+  if (rest.startsWith('_offline_')) return path.replace(tempPrefix, `chapters/${target.slug}/`);
+  return target.first_scene_path;
+}
 
 class SyncEngine {
   private listeners = new Set<Listener>();
@@ -97,8 +110,10 @@ class SyncEngine {
     const cached = await db.cache.get(fileKey(slug, path));
     if (cached && navigator.onLine) {
       apiGetFile(slug, path)
-        .then((fresh) =>
-          db.cache.put({
+        .then(async (fresh) => {
+          const pending = await db.pending.where({ slug, path }).first();
+          if (pending) return;
+          await db.cache.put({
             key: fileKey(slug, path),
             slug,
             path,
@@ -106,8 +121,8 @@ class SyncEngine {
             frontmatter: fresh.frontmatter,
             serverEtag: fresh.etag,
             cachedAt: Date.now(),
-          }),
-        )
+          });
+        })
         .catch(() => {});
       return {
         path: cached.path,
@@ -120,15 +135,18 @@ class SyncEngine {
     if (navigator.onLine) {
       try {
         const fresh = await apiGetFile(slug, path);
-        await db.cache.put({
-          key: fileKey(slug, path),
-          slug,
-          path,
-          body: fresh.body,
-          frontmatter: fresh.frontmatter,
-          serverEtag: fresh.etag,
-          cachedAt: Date.now(),
-        });
+        const pending = await db.pending.where({ slug, path }).first();
+        if (!pending) {
+          await db.cache.put({
+            key: fileKey(slug, path),
+            slug,
+            path,
+            body: fresh.body,
+            frontmatter: fresh.frontmatter,
+            serverEtag: fresh.etag,
+            cachedAt: Date.now(),
+          });
+        }
         return fresh;
       } catch (e) {
         this.set({ status: 'offline', lastError: String(e) });
@@ -229,7 +247,7 @@ class SyncEngine {
         await this.getTree(slug, true);
         return result;
       } catch (e) {
-        if (!String(e).includes('fetch')) throw e;
+        if (!isNetworkError(e)) throw e;
       }
     }
 
@@ -288,7 +306,7 @@ class SyncEngine {
         await this.getTree(slug, true);
         return result;
       } catch (e) {
-        if (!String(e).includes('fetch')) throw e;
+        if (!isNetworkError(e)) throw e;
       }
     }
 
@@ -325,7 +343,7 @@ class SyncEngine {
         await this.getTree(slug, true);
         return result;
       } catch (e) {
-        if (!String(e).includes('fetch')) throw e;
+        if (!isNetworkError(e)) throw e;
       }
     }
 
@@ -356,7 +374,7 @@ class SyncEngine {
         await this.getTree(slug, true);
         return;
       } catch (e) {
-        if (!String(e).includes('fetch')) throw e;
+        if (!isNetworkError(e)) throw e;
       }
     }
 
@@ -378,7 +396,7 @@ class SyncEngine {
         await this.getTree(slug, true);
         return;
       } catch (e) {
-        if (!String(e).includes('fetch')) throw e;
+        if (!isNetworkError(e)) throw e;
       }
     }
 
@@ -413,7 +431,7 @@ class SyncEngine {
         await this.getTree(slug, true);
         return;
       } catch (e) {
-        if (!String(e).includes('fetch')) throw e;
+        if (!isNetworkError(e)) throw e;
       }
     }
 
@@ -422,6 +440,7 @@ class SyncEngine {
 
     if (isOfflinePath(srcPath)) {
       const ops = await db.structureOps.where('slug').equals(slug).toArray();
+      let matched = false;
       for (const op of ops) {
         if (op.op === 'new-scene') {
           const opPayload = op.payload as { chapterSlug: string };
@@ -430,6 +449,7 @@ class SyncEngine {
             await db.structureOps.update(op.id!, {
               payload: { ...op.payload, chapterSlug: dstChapterSlug },
             });
+            matched = true;
             break;
           }
         }
@@ -441,6 +461,14 @@ class SyncEngine {
       );
       await this.putCachedTree(slug, updated);
       await this.rekeyLocalPath(slug, srcPath, tempScenePath);
+      if (!matched) {
+        await this.queueStructureOp(slug, 'move-scene', {
+          srcPath,
+          dstChapterSlug,
+          srcOrder,
+          dstOrder,
+        }, tempId);
+      }
       return;
     }
 
@@ -458,8 +486,8 @@ class SyncEngine {
     }, tempId);
   }
 
-  async flushStructureOps(): Promise<void> {
-
+  async flushStructureOps(): Promise<number> {
+    let processed = 0;
     while (true) {
       const next = await db.structureOps.orderBy('queuedAt').first();
       if (!next) break;
@@ -527,6 +555,7 @@ class SyncEngine {
           }
         }
         await db.structureOps.delete(next.id!);
+        processed++;
       } catch (e) {
         await db.structureOps.update(next.id!, {
           attempts: next.attempts + 1,
@@ -536,6 +565,7 @@ class SyncEngine {
       }
     }
     await this.refreshCounts();
+    return processed;
   }
 
   private async remapPaths(
@@ -552,11 +582,8 @@ class SyncEngine {
     const tempPrefix = `chapters/${tempSlug}/`;
     const cached = await db.cache.where('slug').equals(slug).toArray();
     for (const entry of cached) {
-      if (!entry.path.startsWith(tempPrefix)) continue;
-      const newPath = entry.path === `${tempPrefix}chapter.md`
-        ? target.meta_path
-        : entry.path.includes('_offline_') ? target.first_scene_path
-        : entry.path.replace(tempPrefix, `chapters/${target.slug}/`);
+      const newPath = mapTempPath(entry.path, tempPrefix, target);
+      if (newPath === null) continue;
 
       await db.cache.put({ ...entry, key: fileKey(slug, newPath), path: newPath });
       await db.cache.delete(entry.key);
@@ -569,6 +596,43 @@ class SyncEngine {
       });
 
       for (const fn of this.pathRemapListeners) fn(entry.path, newPath);
+    }
+
+    const ops = await db.structureOps.where('slug').equals(slug).toArray();
+    for (const op of ops) {
+      const payload = op.payload as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...payload };
+      let changed = false;
+
+      for (const key of ['chapterSlug', 'dstChapterSlug'] as const) {
+        if (next[key] === tempSlug) {
+          next[key] = target.slug;
+          changed = true;
+        }
+      }
+      if (typeof next.srcPath === 'string') {
+        const mapped = mapTempPath(next.srcPath, tempPrefix, target);
+        if (mapped !== null) {
+          next.srcPath = mapped;
+          changed = true;
+        }
+      }
+      for (const key of ['items', 'srcOrder', 'dstOrder'] as const) {
+        const arr = next[key] as { path: string }[] | undefined;
+        if (!Array.isArray(arr)) continue;
+        const mapped = arr.map(entry => {
+          const newPath = mapTempPath(entry.path, tempPrefix, target);
+          return newPath !== null ? { ...entry, path: newPath } : entry;
+        });
+        if (mapped.some((entry, i) => entry.path !== arr[i].path)) {
+          next[key] = mapped;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await db.structureOps.update(op.id!, { payload: next });
+      }
     }
   }
 
@@ -616,14 +680,40 @@ class SyncEngine {
     }
 
     await this.rekeyLocalPath(slug, tempPath, realPath);
+
+    const ops = await db.structureOps.where('slug').equals(slug).toArray();
+    for (const op of ops) {
+      const payload = op.payload as Record<string, unknown>;
+      const next: Record<string, unknown> = { ...payload };
+      let changed = false;
+
+      if (next.srcPath === tempPath) {
+        next.srcPath = realPath;
+        changed = true;
+      }
+      for (const key of ['items', 'srcOrder', 'dstOrder'] as const) {
+        const arr = next[key] as { path: string }[] | undefined;
+        if (!Array.isArray(arr)) continue;
+        const mapped = arr.map(entry => entry.path === tempPath ? { ...entry, path: realPath } : entry);
+        if (mapped.some((entry, i) => entry.path !== arr[i].path)) {
+          next[key] = mapped;
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        await db.structureOps.update(op.id!, { payload: next });
+      }
+    }
   }
 
   private async keepaliveTrees(): Promise<void> {
+    if (!navigator.onLine) return;
     const cached = await db.trees.toArray();
     for (const entry of cached) {
       try {
         const fresh = await apiGetProject(entry.slug);
-        await db.trees.put({ slug: entry.slug, tree: fresh, cachedAt: Date.now() });
+        await this.putCachedTree(entry.slug, fresh);
       } catch {
         // Silently skip — keepalive is best-effort
       }
@@ -689,8 +779,9 @@ class SyncEngine {
     if (this.flushing) return;
     this.flushing = true;
     this.set({ status: 'syncing' });
-    await this.flushStructureOps();
+    const structureOpsProcessed = await this.flushStructureOps();
     let lastError: string | null = null;
+    let pendingProcessed = 0;
     try {
       while (true) {
         const next = await db.pending.orderBy('queuedAt').first();
@@ -720,6 +811,7 @@ class SyncEngine {
             cachedAt: Date.now(),
           });
           await db.pending.delete(next.id!);
+          pendingProcessed++;
         } catch (e) {
           lastError = String(e);
           await db.pending.update(next.id!, {
@@ -737,12 +829,14 @@ class SyncEngine {
     } finally {
       this.flushing = false;
       await this.refreshCounts();
-      // Refresh trees from server after sync
-      const trees = await db.trees.toArray();
-      for (const entry of trees) {
-        try {
-          if (navigator.onLine) await this.getTree(entry.slug);
-        } catch { /* best-effort */ }
+      // Refresh trees from server, but only if this flush actually did something
+      if (structureOpsProcessed > 0 || pendingProcessed > 0) {
+        const trees = await db.trees.toArray();
+        for (const entry of trees) {
+          try {
+            if (navigator.onLine) await this.getTree(entry.slug);
+          } catch { /* best-effort */ }
+        }
       }
     }
   }

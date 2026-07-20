@@ -20,6 +20,7 @@ import {
 } from '../../lib/api';
 import { SAVE_DEBOUNCE_MS, syncEngine } from '../../lib/syncEngine';
 import { countWords } from '../../lib/words';
+import { toast } from '../../app/Toast';
 
 const SEARCH_SCROLL_OFFSET = 64;
 
@@ -171,7 +172,7 @@ export const ChapterFlow = forwardRef<ChapterFlowHandle, Props>(function Chapter
       onTreeChanged();
       onSelect(r.path);
     } catch (err) {
-      alert(`Failed: ${err}`);
+      toast(`Failed: ${err}`, 'error');
     }
   };
 
@@ -547,7 +548,7 @@ function SceneSidecard({
   const [generating, setGenerating] = useState(false);
   const generate = async () => {
     if (wordCount === 0) {
-      alert('No scene content yet — write something first.');
+      toast('No scene content yet — write something first.', 'info');
       return;
     }
     setGenerating(true);
@@ -557,7 +558,7 @@ function SceneSidecard({
       const { summary } = await summarizeFile(slug, scenePath, helperModel);
       update({ summary });
     } catch (err) {
-      alert(`Failed to generate summary: ${err}`);
+      toast(`Failed to generate summary: ${err}`, 'error');
     } finally {
       setGenerating(false);
     }

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -16,8 +16,10 @@ from ..storage.fs import write_text_atomic
 from ..storage.helpers import (
     SLUG_RE,
     classify_chapter_kind,
+    coerce_order,
     is_empty_chapter_dir,
     next_scene_number,
+    order_sort_key,
     slug_position,
     slugify,
 )
@@ -48,7 +50,7 @@ def _validate_slug(s: str) -> None:
 
 
 @router.post("/chapter/new")
-def new_chapter(slug: str, body: NewChapterRequest) -> dict:
+def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
     root = paths.project_root(slug)
     chapters_dir = root / "chapters"
     chapters_dir.mkdir(parents=True, exist_ok=True)
@@ -116,7 +118,6 @@ def new_chapter(slug: str, body: NewChapterRequest) -> dict:
         )
         kind_label = "Chapter" if body.kind == "chapter" else "Interlude"
         position = max_position + 1
-        chapter_slug = f"{position:02d}_{kind_label}_{ordinal:02d}"
         for _ in range(config.MAX_CHAPTER_SLOT_SEARCH):
             chapter_slug = f"{position:02d}_{kind_label}_{ordinal:02d}"
             non_empty = existing_dirs.get(chapter_slug, False)
@@ -131,7 +132,7 @@ def new_chapter(slug: str, body: NewChapterRequest) -> dict:
 
     if body.kind == "chapter":
         default_title = body.title or f"Chapter {ordinal}"
-        chapter_meta: dict = {
+        chapter_meta: dict[str, Any] = {
             "title": default_title,
             "summary": "",
             "chapter": ordinal,
@@ -171,14 +172,14 @@ def delete_chapter(slug: str, chapter_slug: str) -> None:
     root = paths.project_root(slug)
     chapter_dir = root / "chapters" / chapter_slug
     if not chapter_dir.is_dir():
-        raise HTTPException(404, f"Chapter not found: {chapter_slug}")
+        return
     if chapter_dir.resolve().parent != (root / "chapters").resolve():
         raise HTTPException(400, "Refusing to delete outside chapters/")
     shutil.rmtree(chapter_dir)
 
 
 @router.post("/chapter/{chapter_slug}/scene/new")
-def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict:
+def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict[str, Any]:
     _validate_slug(chapter_slug)
     root = paths.project_root(slug)
     chapter_dir = root / "chapters" / chapter_slug
@@ -186,7 +187,7 @@ def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict:
         raise HTTPException(404, f"Chapter not found: {chapter_slug}")
     n = next_scene_number(chapter_dir)
     filename = f"{n:02d}.md"
-    scene_meta: dict = {"scene": n, "order": float(n)}
+    scene_meta: dict[str, Any] = {"scene": n, "order": float(n)}
     if body.title:
         scene_meta["title"] = body.title
     write_text_atomic(chapter_dir / filename, fm.serialize(scene_meta, ""))
@@ -197,22 +198,22 @@ def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict:
 
 
 @router.post("/character/new")
-def new_character(slug: str, body: NewSimpleEntryRequest) -> dict:
+def new_character(slug: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
     return _new_simple(slug, "character-profiles", body)
 
 
 @router.post("/reference/new")
-def new_reference(slug: str, body: NewSimpleEntryRequest) -> dict:
+def new_reference(slug: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
     return _new_simple(slug, "references", body)
 
 
 @router.post("/category/{folder}/new")
-def new_category_entry(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict:
+def new_category_entry(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
     _validate_slug(folder)
     return _new_simple(slug, folder, body)
 
 
-def _new_simple(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict:
+def _new_simple(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
     root = paths.project_root(slug)
     file_slug = body.slug or slugify(body.title)
     _validate_slug(file_slug)
@@ -230,7 +231,7 @@ def _new_simple(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict:
                 max_order = max(max_order, float(v))
         except (OSError, ValueError):
             pass
-    meta: dict = {"title": body.title, "aliases": [], "order": max_order + 1.0}
+    meta: dict[str, Any] = {"title": body.title, "aliases": [], "order": max_order + 1.0}
     write_text_atomic(target, fm.serialize(meta, ""))
     return {"path": f"{folder}/{file_slug}.md", "title": body.title}
 
@@ -239,7 +240,7 @@ class ReorderItem(BaseModel):
     path: str
     order: float
     # If set, also writes the `act` frontmatter field. Empty string clears it
-    # (chapter falls back to act-range matching). None means leave act unchanged.
+    # (chapter has no act). None means leave act unchanged.
     act: str | None = None
 
 
@@ -273,7 +274,7 @@ def _renumber_chapter_ordinals(slug: str) -> None:
     if not chapters_dir.is_dir():
         return
 
-    entries: list[tuple[Path, dict, str]] = []
+    entries: list[tuple[Path, dict[str, Any], str]] = []
     for d in chapters_dir.iterdir():
         if not d.is_dir() or d.name.startswith("."):
             continue
@@ -284,10 +285,7 @@ def _renumber_chapter_ordinals(slug: str) -> None:
         meta, content = fm.parse(text)
         entries.append((meta_fp, meta, content))
 
-    entries.sort(key=lambda e: (
-        e[1].get("order") if e[1].get("order") is not None else 1e9,
-        str(e[0]),
-    ))
+    entries.sort(key=lambda e: order_sort_key(coerce_order(e[1].get("order")), str(e[0])))
 
     ch_n = 0
     int_n = 0
@@ -306,7 +304,7 @@ def _renumber_chapter_ordinals(slug: str) -> None:
 
 
 @router.post("/reorder")
-def reorder(slug: str, body: ReorderRequest) -> dict:
+def reorder(slug: str, body: ReorderRequest) -> dict[str, Any]:
     """Bulk-update the `order` (and optionally `act`) frontmatter field for
     many files at once. Each item's path must resolve safely under the project
     root."""

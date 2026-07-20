@@ -44,7 +44,7 @@ class ChapterEntry(BaseModel):
     pov: str | None = None
     status: str | None = None
     words_target: int | None = None
-    act: str | None = None  # explicit act assignment, overrides act range matching
+    act: str | None = None  # explicit act assignment from chapter frontmatter
     scenes: list[SceneEntry] = []
     word_count: int = 0
 

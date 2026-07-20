@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..storage import paths
-from ..storage.manifest import walk_project
+from ..storage.manifest import TRACKED_SUFFIXES, walk_project
 
 router = APIRouter(prefix="/api/projects/{slug}", tags=["sync"])
 
@@ -55,22 +55,28 @@ def get_manifest(slug: str) -> Manifest:
 def list_conflicts(slug: str) -> ConflictList:
     root = paths.project_root(slug)
     out: list[ConflictEntry] = []
-    for entry in walk_project(root):
-        rel = entry["path"]
-        name = rel.rsplit("/", 1)[-1]
+    for p in sorted(root.rglob("*")):
+        name = p.name
         m = _CONFLICT_RE.match(name)
         if not m:
             continue
+        if not p.is_file() or p.suffix not in TRACKED_SUFFIXES:
+            continue
+        rel_parts = p.relative_to(root).parts
+        if any(part.startswith(".") for part in rel_parts):
+            continue
+        rel = p.relative_to(root).as_posix()
         prefix = rel[: -len(name)]
         canonical = f"{prefix}{m['base']}.{m['ext']}"
+        st = p.stat()
         out.append(
             ConflictEntry(
                 path=rel,
                 canonical_path=canonical,
                 device_id=m["device"],
                 timestamp=m["ts"],
-                size=entry["size"],
-                mtime_ns=entry["mtime_ns"],
+                size=st.st_size,
+                mtime_ns=st.st_mtime_ns,
             )
         )
     return ConflictList(slug=slug, conflicts=out)

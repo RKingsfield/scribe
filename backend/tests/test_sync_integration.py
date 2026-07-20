@@ -36,8 +36,6 @@ def test_full_flush_roundtrip(writing_root: Path) -> None:
         json={"title": "Second beat"},
     )
     assert r.status_code == 200
-    scene2 = r.json()
-    scene2_path = scene2["path"]
 
     # 4. Write content to the first scene (no etag required for new file)
     r = c.put(

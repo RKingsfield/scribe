@@ -7,16 +7,7 @@ from typing import Any
 
 from . import frontmatter as fm
 from . import structure
-from .helpers import classify_chapter_kind, order_sort_key
-
-
-def _coerce_float(v: Any) -> float | None:
-    if v is None:
-        return None
-    try:
-        return float(v)
-    except (TypeError, ValueError):
-        return None
+from .helpers import classify_chapter_kind, coerce_order, order_sort_key
 
 
 def _coerce_str_list(v: Any) -> list[str]:
@@ -35,7 +26,7 @@ def read_scene_entry(rel_path: str, body_path: Path) -> dict[str, Any]:
         "title": meta.get("title"),
         "summary": meta.get("summary"),
         "scene": meta.get("scene"),
-        "order": _coerce_float(meta.get("order")),
+        "order": coerce_order(meta.get("order")),
         "pov": meta.get("pov"),
         "status": meta.get("status"),
         "words_target": meta.get("words_target"),
@@ -64,7 +55,7 @@ def read_chapter_entry(project_root: Path, ch: structure.ChapterDir) -> dict[str
         "summary": meta.get("summary"),
         "chapter": chapter_n,
         "interlude": interlude_n,
-        "order": _coerce_float(meta.get("order")),
+        "order": coerce_order(meta.get("order")),
         "pov": meta.get("pov"),
         "status": meta.get("status"),
         "words_target": meta.get("words_target"),
@@ -82,5 +73,5 @@ def read_reference_entry(rel_path: str, body_path: Path) -> dict[str, Any]:
         "title": meta.get("title"),
         "aliases": _coerce_str_list(meta.get("aliases")),
         "tags": _coerce_str_list(meta.get("tags")),
-        "order": _coerce_float(meta.get("order")),
+        "order": coerce_order(meta.get("order")),
     }

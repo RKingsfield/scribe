@@ -24,9 +24,9 @@ def project_root(slug: str, must_exist: bool = True) -> Path:
     root = writing_root() / slug
     if must_exist and not root.is_dir():
         raise HTTPException(404, f"Project not found: {slug}")
-    resolved = root.resolve()
-    base = writing_root().resolve()
     try:
+        resolved = root.resolve()
+        base = writing_root().resolve()
         resolved.relative_to(base)
     except ValueError:
         raise HTTPException(400, "Path escape detected")
@@ -40,8 +40,8 @@ def resolve_in_project(slug: str, rel_path: str) -> Path:
     p = Path(rel_path)
     if p.is_absolute() or any(part in {"..", ""} for part in p.parts):
         raise HTTPException(400, f"Invalid path: {rel_path!r}")
-    abs_path = (root / p).resolve()
     try:
+        abs_path = (root / p).resolve()
         # .resolve() on both sides ensures symlinks pointing outside the project are rejected
         abs_path.relative_to(root.resolve())
     except ValueError:

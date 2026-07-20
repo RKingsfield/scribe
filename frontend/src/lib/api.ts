@@ -99,6 +99,12 @@ async function jsonOrThrow<T>(r: Response): Promise<T> {
   return r.json() as Promise<T>;
 }
 
+// jsonOrThrow's server-error path always throws a plain Error; a genuine
+// fetch failure (offline, DNS, CORS, Safari's "Load failed") throws TypeError.
+export function isNetworkError(e: unknown): boolean {
+  return e instanceof TypeError;
+}
+
 export async function listProjects(signal?: AbortSignal): Promise<ProjectListItem[]> {
   return jsonOrThrow(await fetch('/api/projects', { signal }));
 }

@@ -123,6 +123,19 @@ def test_delete_chapter(sample_project: Path) -> None:
     assert not (sample_project / "chapters" / "01_Chapter_01").exists()
 
 
+def test_delete_chapter_idempotent_on_repeat(sample_project: Path) -> None:
+    cli = c()
+    r1 = cli.delete("/api/projects/example-novel/chapter/01_Chapter_01")
+    assert r1.status_code == 204
+    r2 = cli.delete("/api/projects/example-novel/chapter/01_Chapter_01")
+    assert r2.status_code == 204
+
+
+def test_delete_chapter_missing_returns_204(sample_project: Path) -> None:
+    r = c().delete("/api/projects/example-novel/chapter/99_Chapter_99")
+    assert r.status_code == 204
+
+
 def test_new_character(sample_project: Path) -> None:
     r = c().post("/api/projects/example-novel/character/new", json={"title": "Asha"})
     assert r.status_code == 200
@@ -249,7 +262,7 @@ def test_reorder_writes_act_field(sample_project: Path) -> None:
 # ── scene/move ──────────────────────────────────────────────────────
 
 
-def _move(cli, **overrides) -> "Response":  # type: ignore[name-defined]
+def _move(cli, **overrides):
     payload = {
         "src_path": "chapters/01_Chapter_01/01.md",
         "dst_chapter_slug": "11_Chapter_11",

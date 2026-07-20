@@ -56,7 +56,20 @@ Frontend tests use vitest + fake-indexeddb.
 | `ANTHROPIC_API_KEY` | unset | Enables Claude models in the model picker |
 | `QDRANT_URL` | unset | Qdrant endpoint for RAG queries |
 | `EMBED_URL` | unset | Embedding server for RAG queries |
+| `PORT` | `3030` | Port the backend listens on |
+| `STATIC_ROOT` | `/app/static` | Where the built frontend assets are served from |
+| `GIT_AUTHOR_NAME` | `Scribe Auto` | Git commit author name used for auto-commits |
+| `GIT_AUTHOR_EMAIL` | `scribe@scribe.local` | Git commit author email used for auto-commits |
+| `FORGEJO_BASE_URL` | unset | Forgejo instance for per-novel git push |
+| `FORGEJO_USER` | unset | Forgejo username for per-novel git push |
+| `FORGEJO_TOKEN` | unset | Forgejo access token for per-novel git push |
+| `RAG_RECIPES_DIR` | `/data/rag/recipes` | Where RAG recipe files live (container path) |
+| `RAG_HOST_RECIPES_DIR` | unset | Host-side path to the RAG recipes directory, for tooling that runs outside the container |
+| `RAG_HOST_WRITING_ROOT` | unset | Host-side path to the writing root, for tooling that runs outside the container |
+| `SCRIBE_AUTOCOMMIT_DISABLED` | unset | Set to `1` to disable the automatic git commit scheduler |
 | `AUTOCOMMIT_INTERVAL_MIN` | `10` | Minutes between automatic git commits |
+
+The autocommit scheduler embeds `FORGEJO_TOKEN` directly in each novel's `origin` remote URL, so the token ends up stored in plaintext in that novel's `.git/config`, not just in the process environment. Scope it accordingly (per-repo push access, not admin).
 
 ## Building and deploying
 

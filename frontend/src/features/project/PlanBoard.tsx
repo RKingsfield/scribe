@@ -7,13 +7,13 @@ import {
   DragEndEvent,
   PointerSensor,
   closestCenter,
+  useDraggable,
   useDroppable,
   useSensor,
   useSensors,
 } from '@dnd-kit/core';
 import {
   SortableContext,
-  arrayMove,
   rectSortingStrategy,
   useSortable,
   verticalListSortingStrategy,
@@ -26,15 +26,22 @@ import {
   ProjectTree,
   SceneEntry,
   deleteFile,
-  putFile,
-  getFile,
   summarizeFile,
   updateProject,
 } from '../../lib/api';
 import { syncEngine } from '../../lib/syncEngine';
 import { resolveSceneMove } from '../../lib/sceneDrag';
+import {
+  actZoneId,
+  groupChaptersByAct,
+  resolveChapterReorder,
+  statusClass,
+} from '../../lib/chapterDrag';
+import { toast } from '../../app/Toast';
 import { ActsEditor } from './ActsEditor';
 import { ProjectContext } from './ProjectView';
+
+const OUTLINE_ACT_ZONE_PREFIX = 'outline-act-zone:';
 
 type Status = 'draft' | 'revision' | 'final';
 const STATUSES: { id: Status; label: string; color: string }[] = [
@@ -49,9 +56,7 @@ interface SceneCardData {
 }
 
 function sceneStatusOf(s: SceneEntry): Status {
-  if (s.status === 'revision') return 'revision';
-  if (s.status === 'final') return 'final';
-  return 'draft';
+  return statusClass(s.status);
 }
 
 function flattenScenes(tree: ProjectTree): SceneCardData[] {
@@ -114,17 +119,12 @@ export function PlanBoard() {
   ) => {
     if (sceneStatusOf(card.scene) === next) return;
     try {
-      const f = await getFile(slug, card.scene.path);
+      const f = await syncEngine.getFile(slug, card.scene.path);
       const fm = { ...f.frontmatter, status: next };
-      await putFile(
-        slug,
-        card.scene.path,
-        { body: f.body, frontmatter: fm },
-        f.etag,
-      );
+      await syncEngine.saveFile(slug, card.scene.path, f.body, fm, f.etag);
       refreshTree();
     } catch (e) {
-      alert(`Failed to update status: ${e}`);
+      toast(`Failed to update status: ${e}`, 'error');
     }
   };
 
@@ -148,30 +148,25 @@ export function PlanBoard() {
       });
       refreshTree();
     } catch (e) {
-      alert(`Failed to create ${kind}: ${e}`);
+      toast(`Failed to create ${kind}: ${e}`, 'error');
     }
   };
 
   const handleNewSceneInLatestChapter = async (status: Status) => {
     const ch = pickLatestChapter(tree);
     if (!ch) {
-      alert('Create a chapter first (use Outline view).');
+      toast('Create a chapter first (use Outline view).', 'info');
       return;
     }
     try {
       const r = await syncEngine.createScene(slug, ch.slug, {});
       if (status !== 'draft') {
-        const f = await getFile(slug, r.path);
-        await putFile(
-          slug,
-          r.path,
-          { body: f.body, frontmatter: { ...f.frontmatter, status } },
-          f.etag,
-        );
+        const f = await syncEngine.getFile(slug, r.path);
+        await syncEngine.saveFile(slug, r.path, f.body, { ...f.frontmatter, status }, f.etag);
       }
       refreshTree();
     } catch (e) {
-      alert(`Failed: ${e}`);
+      toast(`Failed: ${e}`, 'error');
     }
   };
 
@@ -284,7 +279,7 @@ function OutlineGrid({
   onOpenFile: (path: string) => void;
   onNewChapter: (act: string | null, kind: 'chapter' | 'interlude') => void;
 }) {
-  const groups = groupChaptersByAct(tree);
+  const groups = groupChaptersByAct(tree, tree.chapters);
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
   );
@@ -333,51 +328,13 @@ function OutlineGrid({
       return;
     }
 
-    const sourceChapter = allChapters.find((c) => c.path === activeId);
-    if (!sourceChapter) return;
-
-    const findActFor = (ch: ChapterEntry): string | null =>
-      groups.find((g) => g.chapters.some((c) => c.path === ch.path))?.act?.name ?? null;
-    const sourceAct = findActFor(sourceChapter);
-
-    let next: ChapterEntry[];
-    let targetAct: string | null;
-
-    if (overId.startsWith('outline-act-zone:')) {
-      targetAct = overId.slice('outline-act-zone:'.length);
-      if (targetAct === '__unassigned') targetAct = null;
-      const remaining = allChapters.filter((c) => c.path !== sourceChapter.path);
-      const targetGroup = groups.find((g) => (g.act?.name ?? null) === targetAct);
-      let insertAt = remaining.length;
-      if (targetGroup && targetGroup.chapters.length > 0) {
-        const last = targetGroup.chapters[targetGroup.chapters.length - 1];
-        insertAt = remaining.findIndex((c) => c.path === last.path) + 1;
-      }
-      next = [...remaining];
-      next.splice(insertAt, 0, sourceChapter);
-    } else {
-      const targetChapter = allChapters.find((c) => c.path === overId);
-      if (!targetChapter || sourceChapter.path === targetChapter.path) return;
-      targetAct = findActFor(targetChapter);
-      const oldIdx = allChapters.findIndex((c) => c.path === sourceChapter.path);
-      const newIdx = allChapters.findIndex((c) => c.path === targetChapter.path);
-      next = arrayMove([...allChapters], oldIdx, newIdx);
-    }
-
-    const actChanged = sourceAct !== targetAct;
-    const payload = next.map((c, i) => {
-      const item: { path: string; order: number; act?: string | null } = {
-        path: c.meta_path,
-        order: i + 1,
-      };
-      if (actChanged && c.path === sourceChapter.path) {
-        item.act = targetAct ?? '';
-      }
-      return item;
+    const result = resolveChapterReorder(tree, allChapters, activeId, overId, {
+      actZonePrefix: OUTLINE_ACT_ZONE_PREFIX,
     });
+    if (!result) return;
 
     try {
-      await syncEngine.reorderItems(slug, payload);
+      await syncEngine.reorderItems(slug, result.payload);
       onTreeChanged();
     } catch (err) {
       console.error('Chapter reorder failed', err);
@@ -463,29 +420,8 @@ function OutlineGrid({
   );
 }
 
-function groupChaptersByAct(
-  tree: ProjectTree,
-): { act: { name: string } | null; chapters: ChapterEntry[] }[] {
-  const groups: { act: { name: string } | null; chapters: ChapterEntry[] }[] =
-    tree.acts.map((a) => ({ act: { name: a.name }, chapters: [] }));
-  const unassigned: ChapterEntry[] = [];
-  for (const c of tree.chapters) {
-    if (c.act) {
-      const idx = tree.acts.findIndex((a) => a.name === c.act);
-      if (idx !== -1) {
-        groups[idx].chapters.push(c);
-        continue;
-      }
-    }
-    unassigned.push(c);
-  }
-  if (tree.acts.length === 0) return [{ act: null, chapters: tree.chapters }];
-  if (unassigned.length > 0) groups.push({ act: null, chapters: unassigned });
-  return groups;
-}
-
 function OutlineActDropzone({ actName, isEmpty }: { actName: string | null; isEmpty: boolean }) {
-  const id = `outline-act-zone:${actName ?? '__unassigned'}`;
+  const id = actZoneId(OUTLINE_ACT_ZONE_PREFIX, actName);
   const { setNodeRef, isOver } = useDroppable({ id });
   const cls = `act-dropzone${isOver ? ' over' : ''}${isEmpty ? ' empty' : ''}`;
   return (
@@ -547,7 +483,7 @@ function OutlineCard({
       await syncEngine.createScene(slug, chapter.slug, {});
       onTreeChanged();
     } catch (err) {
-      alert(`Failed: ${err}`);
+      toast(`Failed: ${err}`, 'error');
     }
   };
 
@@ -557,7 +493,7 @@ function OutlineCard({
       await syncEngine.removeChapter(slug, chapter.slug);
       onTreeChanged();
     } catch (err) {
-      alert(`Failed: ${err}`);
+      toast(`Failed: ${err}`, 'error');
     }
   };
 
@@ -743,15 +679,15 @@ function SceneRow({
       return;
     }
     try {
-      const f = await getFile(slug, scene.path);
+      const f = await syncEngine.getFile(slug, scene.path);
       const fm = { ...f.frontmatter };
       if (next) fm.pov = next;
       else delete fm.pov;
-      await putFile(slug, scene.path, { body: f.body, frontmatter: fm }, f.etag);
+      await syncEngine.saveFile(slug, scene.path, f.body, fm, f.etag);
       onTreeChanged();
       setEditingPov(false);
     } catch (err) {
-      alert(`Failed to save POV: ${err}`);
+      toast(`Failed to save POV: ${err}`, 'error');
     }
   };
 
@@ -766,7 +702,7 @@ function SceneRow({
       await deleteFile(slug, scene.path);
       onTreeChanged();
     } catch (err) {
-      alert(`Failed to delete scene: ${err}`);
+      toast(`Failed to delete scene: ${err}`, 'error');
     }
   };
 
@@ -776,7 +712,7 @@ function SceneRow({
   const generate = async (e: React.MouseEvent) => {
     e.stopPropagation();
     if (scene.word_count === 0) {
-      alert('No scene content yet — write something first.');
+      toast('No scene content yet — write something first.', 'info');
       return;
     }
     setGenerating(true);
@@ -786,16 +722,11 @@ function SceneRow({
         scene.path,
         helperModel,
       );
-      const f = await getFile(slug, scene.path);
-      await putFile(
-        slug,
-        scene.path,
-        { body: f.body, frontmatter: { ...f.frontmatter, summary: next } },
-        f.etag,
-      );
+      const f = await syncEngine.getFile(slug, scene.path);
+      await syncEngine.saveFile(slug, scene.path, f.body, { ...f.frontmatter, summary: next }, f.etag);
       onTreeChanged();
     } catch (err) {
-      alert(`Failed to generate summary: ${err}`);
+      toast(`Failed to generate summary: ${err}`, 'error');
     } finally {
       setGenerating(false);
     }
@@ -826,17 +757,12 @@ function SceneRow({
     }
     setSaving(true);
     try {
-      const f = await getFile(slug, scene.path);
-      await putFile(
-        slug,
-        scene.path,
-        { body: f.body, frontmatter: { ...f.frontmatter, summary: next } },
-        f.etag,
-      );
+      const f = await syncEngine.getFile(slug, scene.path);
+      await syncEngine.saveFile(slug, scene.path, f.body, { ...f.frontmatter, summary: next }, f.etag);
       onTreeChanged();
       setEditing(false);
     } catch (err) {
-      alert(`Failed to save summary: ${err}`);
+      toast(`Failed to save summary: ${err}`, 'error');
     } finally {
       setSaving(false);
     }
@@ -1066,10 +992,7 @@ function DraggableSceneCard({
       ? `${chapterLabel}.${scene.scene}`
       : `s${scene.scene ?? '?'}`;
   const pov = scene.pov ?? chapter.pov ?? null;
-  const pin =
-    chapter.kind === 'interlude'
-      ? `Interlude ${chapter.interlude ?? '·'} — ${chapter.title || chapter.slug}`
-      : `Ch. ${chapter.chapter ?? '·'} — ${chapter.title || chapter.slug}`;
+  const pin = chapterGroupLabel(chapter);
 
   return (
     <article
@@ -1098,5 +1021,3 @@ function DraggableSceneCard({
     </article>
   );
 }
-
-import { useDraggable } from '@dnd-kit/core';

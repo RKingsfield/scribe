@@ -6,7 +6,6 @@ import json
 from pathlib import Path
 from typing import Any, AsyncIterator
 
-import httpx
 import pytest
 from fastapi.testclient import TestClient
 
@@ -131,6 +130,45 @@ def test_scope_preview_chapter(sample_project: Path) -> None:
     data = r.json()
     assert data["section_count"] == 3
     assert data["codex_included"] is False
+
+
+def test_scope_preview_act_returns_only_assigned_chapter(writing_root: Path) -> None:
+    proj = writing_root / "acttest"
+    (proj / "chapters" / "01_Chapter_01").mkdir(parents=True)
+    (proj / "chapters" / "02_Chapter_02").mkdir(parents=True)
+    (proj / "project.yml").write_text(
+        "title: Act Test\nslug: acttest\nauthor: Author\n"
+        "default_model: local\nacts:\n  - name: Act I\n",
+        encoding="utf-8",
+    )
+    (proj / "chapters" / "01_Chapter_01" / "chapter.md").write_text(
+        "---\ntitle: Chapter 1\nchapter: 1\norder: 1\nact: Act I\n---\n",
+        encoding="utf-8",
+    )
+    (proj / "chapters" / "01_Chapter_01" / "01.md").write_text(
+        "---\nscene: 1\norder: 1\n---\nScene one body.\n",
+        encoding="utf-8",
+    )
+    (proj / "chapters" / "02_Chapter_02" / "chapter.md").write_text(
+        "---\ntitle: Chapter 2\nchapter: 2\norder: 2\n---\n",
+        encoding="utf-8",
+    )
+    (proj / "chapters" / "02_Chapter_02" / "01.md").write_text(
+        "---\nscene: 1\norder: 1\n---\nScene two body.\n",
+        encoding="utf-8",
+    )
+
+    r = client().post(
+        "/api/projects/acttest/chat/scope/preview",
+        json={
+            "messages": [],
+            "scope": {"kind": "act", "act": 1},
+            "include_codex": False,
+        },
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["section_count"] == 2
 
 
 def test_scope_preview_invalid_kind_returns_400(sample_project: Path) -> None:
@@ -308,8 +346,8 @@ def test_models_proxy_appends_claude_when_key_set(monkeypatch) -> None:
     r = client().get("/api/models")
     assert r.status_code == 200
     ids = [m["id"] for m in r.json()]
-    assert "claude-opus-4-7" in ids
-    assert "claude-sonnet-4-6" in ids
+    assert "claude-opus-4-8" in ids
+    assert "claude-sonnet-5" in ids
 
 
 # ---------------- M15: Claude API escape hatch ----------------
@@ -584,3 +622,58 @@ def test_rewrite_routes_to_anthropic(sample_project: Path, monkeypatch) -> None:
     assert "Tarn weighed the axe." in body
     assert '"upstream": "anthropic"' in body
     assert "[DONE]" in body
+
+
+# ---------------- /summarize ----------------
+
+
+class _FakeSummarizeResp:
+    def __init__(self, data: dict, status_code: int = 200) -> None:
+        self._data = data
+        self.status_code = status_code
+
+    def json(self) -> dict:
+        return self._data
+
+
+class _FakeSummarizeClient:
+    def __init__(self, resp: _FakeSummarizeResp) -> None:
+        self._resp = resp
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *args):
+        return False
+
+    async def post(self, url: str, **kwargs: Any) -> _FakeSummarizeResp:
+        return self._resp
+
+
+def _patch_summarize(monkeypatch: pytest.MonkeyPatch, data: dict, status: int = 200) -> None:
+    def factory(*args: Any, **kwargs: Any) -> _FakeSummarizeClient:
+        return _FakeSummarizeClient(_FakeSummarizeResp(data, status))
+
+    monkeypatch.setattr("scribe.routes.chat.httpx.AsyncClient", factory)
+
+
+def test_summarize_orchestrator_strips_think_blocks(sample_project: Path, monkeypatch) -> None:
+    _patch_summarize(
+        monkeypatch,
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": "<think>reasoning</think>Summary."
+                    }
+                }
+            ]
+        },
+    )
+    r = client().post(
+        "/api/projects/example-novel/chat/summarize",
+        json={"path": "chapters/11_Chapter_11/02.md"},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["summary"] == "Summary."

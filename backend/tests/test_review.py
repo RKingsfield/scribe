@@ -114,6 +114,16 @@ def test_add_comment(client, sample_project):
     assert comments_file.exists()
 
 
+def test_add_comment_null_byte_scene_rejected(client, sample_project):
+    session = _create_session(client)
+    r = client.post(f"/api/review/{session['token']}/comments", json={
+        "scene": "chapters/01_Chapter_01/01.md\x00.txt",
+        "anchor": {"prefix": "a ", "exact": "b", "suffix": " c"},
+        "text": "Comment",
+    }, headers={"X-Reviewer-Name": "Sarah"})
+    assert r.status_code == 400
+
+
 def test_list_comments(client, sample_project):
     session = _create_session(client)
     token = session["token"]
@@ -162,3 +172,27 @@ def test_export_review_invalid_format(client, sample_project):
     token = session["token"]
     r = client.get(f"/api/review/{token}/export?format=pdf")
     assert r.status_code == 400
+
+
+def test_add_comment_path_traversal_rejected(client, sample_project):
+    session = _create_session(client)
+    r = client.post(f"/api/review/{session['token']}/comments", json={
+        "scene": "../../evil/01.md",
+        "anchor": {"prefix": "a ", "exact": "b", "suffix": " c"},
+        "text": "pwned",
+    }, headers={"X-Reviewer-Name": "Eve"})
+    assert r.status_code == 400
+    escaped = (sample_project / "../../evil/comments.yml").resolve()
+    assert not escaped.exists()
+
+
+def test_add_comment_scene_outside_session_chapters_rejected(client, sample_project):
+    session = _create_session(client)
+    r = client.post(f"/api/review/{session['token']}/comments", json={
+        "scene": "chapters/11_Chapter_11/01.md",
+        "anchor": {"prefix": "a ", "exact": "b", "suffix": " c"},
+        "text": "should fail",
+    }, headers={"X-Reviewer-Name": "Eve"})
+    assert r.status_code in (400, 404)
+    comments_file = sample_project / "chapters" / "11_Chapter_11" / "comments.yml"
+    assert not comments_file.exists()

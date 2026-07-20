@@ -26,7 +26,10 @@ RUN pip install --no-cache-dir .
 # ---- test stage (build fails if tests fail) ---------------------------------
 FROM base AS test
 COPY backend/tests ./tests
-RUN pip install --no-cache-dir pytest && pytest tests/ -v
+RUN pip install --no-cache-dir .[test]
+RUN ruff check src tests
+RUN mypy src/scribe
+RUN pytest tests/ -v
 
 # ---- runtime ----------------------------------------------------------------
 FROM base

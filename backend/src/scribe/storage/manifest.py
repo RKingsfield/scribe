@@ -1,12 +1,13 @@
 from pathlib import Path
+from typing import Any
 
 from .fs import sha256_text
 
 TRACKED_SUFFIXES = {".md", ".yml", ".yaml", ".txt"}
 
 
-def walk_project(root: Path) -> list[dict]:
-    out: list[dict] = []
+def walk_project(root: Path) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
     if not root.is_dir():
         return out
     for p in sorted(root.rglob("*")):

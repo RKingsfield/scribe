@@ -1,18 +1,19 @@
-import os
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import __version__
-from .config import STATIC_ROOT, WRITING_ROOT
+from .config import SCRIBE_AUTOCOMMIT_DISABLED, STATIC_ROOT, WRITING_ROOT
 from .routes import chat, export, files, git as git_routes, projects, rag, review, structure_ops, sync
 
 
 @asynccontextmanager
-async def lifespan(app: FastAPI):
-    if os.environ.get("SCRIBE_AUTOCOMMIT_DISABLED") != "1":
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    if not SCRIBE_AUTOCOMMIT_DISABLED:
         from .git.autocommit import start_scheduler, stop_scheduler
         start_scheduler()
         try:
@@ -27,7 +28,7 @@ app = FastAPI(title="scribe", version=__version__, lifespan=lifespan)
 
 
 @app.get("/api/health")
-def health() -> dict:
+def health() -> dict[str, Any]:
     return {
         "status": "ok",
         "version": __version__,

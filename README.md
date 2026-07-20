@@ -12,7 +12,7 @@ It runs as a single Docker container with a FastAPI backend and React PWA fronte
 
 ![AI chat with scope picker and model selection](docs/screenshots/chat.png)
 
-It's also a PWA you can pin to your phone or tablet. Edit on the plane, sync when you land -- writes go to IndexedDB immediately and flush to the server whenever you're back online. Conflicts are saved as plaintext files you can merge by hand, so nothing gets lost.
+It's also a PWA you can pin to your phone or tablet. Edit on the plane, sync when you land -- writes go to IndexedDB immediately and flush to the server whenever you're back online. Conflicts are saved as plaintext files you can merge by hand, so nothing gets lost. One practice to keep: let a device finish syncing its offline changes before restructuring the same novel from another device (or directly on disk) -- text edits merge via conflict files, but offline *structural* changes racing a concurrent restructure is an accepted limitation (see [DESIGN.md](docs/DESIGN.md#accepted-limitations)).
 
 For AI-assisted writing, scribe can generate a RAG recipe from your novel's data -- characters, references, world-building notes -- for ingestion into your own LLM pipeline. You can ask questions about your world and characters without sending your manuscript to a third-party service. Everything stays on your infrastructure.
 

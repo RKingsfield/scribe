@@ -50,6 +50,18 @@ def test_get_project_tree_nested(sample_project: Path) -> None:
     assert "the Foxhead" in chars["aliases"]
 
 
+def test_get_project_tree_excludes_conflict_files(sample_project: Path) -> None:
+    conflict = sample_project / "chapters" / "01_Chapter_01" / "01.conflict.dev.20260101T000000Z.md"
+    conflict.write_text(
+        "---\nscene: 1\norder: 1\n---\nConflicting body.\n", encoding="utf-8"
+    )
+    r = client().get("/api/projects/example-novel")
+    assert r.status_code == 200
+    ch1 = r.json()["chapters"][0]
+    assert len(ch1["scenes"]) == 1
+    assert ch1["scenes"][0]["path"] == "chapters/01_Chapter_01/01.md"
+
+
 def test_get_project_404(writing_root: Path) -> None:
     r = client().get("/api/projects/no-such-thing")
     assert r.status_code == 404
@@ -85,6 +97,14 @@ def test_file_get_scene(sample_project: Path) -> None:
 
 def test_file_path_escape_rejected(sample_project: Path) -> None:
     r = client().get("/api/projects/example-novel/file", params={"path": "../../etc/passwd"})
+    assert r.status_code == 400
+
+
+def test_file_null_byte_path_rejected(sample_project: Path) -> None:
+    r = client().get(
+        "/api/projects/example-novel/file",
+        params={"path": "chapters/01_Chapter_01/01.md\x00.txt"},
+    )
     assert r.status_code == 400
 
 

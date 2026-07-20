@@ -128,12 +128,21 @@ function ConflictsModal(props: {
     if (!active) return;
     setBusy(true);
     try {
-      await putFile(
+      const result = await putFile(
         slug,
         active.canonical_path,
         { body: conflictBody, frontmatter: conflictFm },
         canonicalEtag,
       );
+      await db.cache.put({
+        key: fileKey(slug, active.canonical_path),
+        slug,
+        path: active.canonical_path,
+        body: result.body,
+        frontmatter: result.frontmatter,
+        serverEtag: result.etag,
+        cachedAt: Date.now(),
+      });
       await discardServerConflict(slug, active.path);
       await dropLocalMarker();
       setActive(null);

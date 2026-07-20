@@ -66,6 +66,8 @@ Fix: cache is the source of truth. `saveFile` reads the cache first and uses its
 
 Lesson: when a cache stores a "last known authoritative state" stamp, the cache must be the authority. Methods that take a stamp as input should treat it as a fallback, never as a fresh write.
 
+Corollary: reads never stamp the cache while a write is pending for that file — `getFile`'s network refresh skips its `cache.put` entirely when `db.pending` holds an entry for `(slug, path)`; only a flush response is allowed to reconcile the cache's etag.
+
 ### 7. No in-container RAG ingest
 
 RAG ingest tooling is heavy (sentence-transformers, model download, GPU/CPU embed servers). Baking the binary into the scribe image would balloon it ~1.5 GB and tightly couple two release cycles. Instead, scribe writes the recipe to a shared volume and surfaces the literal CLI command. Recipe references host paths so it runs identically from any machine with the data mounted.
@@ -154,3 +156,15 @@ Both backend and frontend compute position/ordinal for new chapters. Backend is 
 ### Helper model preference
 
 All AI helpers share one `localStorage` key, exposed in the rewrite dialogue header and ChapterFlow scene sidecard. The Outline button reads the same key but doesn't expose a picker inline -- the tooltip shows the current value.
+
+---
+
+## Accepted limitations
+
+### Offline structure ops vs. concurrent structural edits
+
+Body edits racing across devices are handled: the loser is written to a `.conflict.*` file and nothing is lost (see #5-6). Structure ops are a different class. If a device queues structural changes offline (create/delete/move) and the same project's *structure* is changed from elsewhere before that queue flushes -- another device, or editing the files directly on disk -- the queued op can be rejected at replay (e.g. a scene created into a chapter that no longer exists). A rejected op blocks the structure-op queue and retries until resolved; the status bar shows the stuck count and last error, so it's visible, not silent.
+
+The mitigations that were cheap are done: temp-path remapping covers every single-device offline sequence, and chapter deletion is idempotent (deleting something already gone succeeds), which neutralises the most likely cross-device race. Full resolution would mean dead-letter queues and per-op conflict resolution UI -- not worth the machinery for a single-user app.
+
+Practice: flush a device's offline queue (come online, let the sync badge clear) before editing the same project from another device or directly on disk.

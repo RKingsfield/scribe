@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from ..storage import frontmatter as fm
 from ..storage import paths, structure
-from ..storage.helpers import ORDER_FALLBACK
+from ..storage.helpers import coerce_order, order_sort_key
 from ..storage.project import load_project
 
 
@@ -66,19 +66,14 @@ def _collect_chapter(project_root: Path, ch: structure.ChapterDir) -> list[FileS
     scene_entries: list[tuple[float | None, str]] = []
     for s in scenes:
         meta, _ = fm.parse((project_root / s.rel_path).read_text(encoding="utf-8"))
-        order = meta.get("order")
-        try:
-            order_f = float(order) if order is not None else None
-        except (TypeError, ValueError):
-            order_f = None
-        scene_entries.append((order_f, s.rel_path))
-    scene_entries.sort(key=lambda t: (t[0] if t[0] is not None else ORDER_FALLBACK, t[1]))
+        scene_entries.append((coerce_order(meta.get("order")), s.rel_path))
+    scene_entries.sort(key=lambda t: order_sort_key(t[0], t[1]))
     for _, p in scene_entries:
         sections.append(_read_section(project_root, p))
     return sections
 
 
-def _build_codex(project_root: Path) -> str | None:
+def build_codex(project_root: Path) -> str | None:
     proj = load_project(project_root)
     blocks: list[str] = []
     for cat in proj.resolved_categories:
@@ -102,22 +97,12 @@ def _build_codex(project_root: Path) -> str | None:
     return "\n\n".join(blocks)
 
 
-def _chapter_act(project_root: Path, ch: structure.ChapterDir, acts: list) -> str | None:
-    """Resolve which act a chapter belongs to.
-
-    Order of precedence: explicit `act` frontmatter on the chapter > matching
-    chapter number against any `acts[].chapters` list in project.yml.
-    """
+def _chapter_act(project_root: Path, ch: structure.ChapterDir) -> str | None:
+    """Resolve which act a chapter belongs to, from its `act` frontmatter."""
     meta_text = (project_root / ch.meta_rel_path).read_text(encoding="utf-8")
     meta, _ = fm.parse(meta_text)
     if meta.get("act"):
         return str(meta["act"])
-    chapter_num = meta.get("chapter")
-    if chapter_num is None:
-        return None
-    for act in acts:
-        if chapter_num in (act.chapters or []):
-            return act.name
     return None
 
 
@@ -146,7 +131,7 @@ def build_bundle(slug: str, scope: ScopeRequest, include_codex: bool) -> ScopeBu
             target_name = str(scope.act)
         label = f"Act — {target_name}"
         for ch in structure.list_chapter_dirs(project_root):
-            ch_act = _chapter_act(project_root, ch, project.acts)
+            ch_act = _chapter_act(project_root, ch)
             if ch_act == target_name:
                 sections.extend(_collect_chapter(project_root, ch))
 
@@ -183,7 +168,7 @@ def build_bundle(slug: str, scope: ScopeRequest, include_codex: bool) -> ScopeBu
     else:
         raise ValueError(f"unknown scope kind: {scope.kind}")
 
-    codex = _build_codex(project_root) if include_codex else None
+    codex = build_codex(project_root) if include_codex else None
     return ScopeBundle(label=label, sections=sections, codex=codex)
 
 

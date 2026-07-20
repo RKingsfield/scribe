@@ -86,9 +86,16 @@ def _save_sessions(slug: str, sessions: list[dict[str, Any]]) -> None:
     write_text_atomic(path, yaml.dump(sessions, allow_unicode=True))
 
 
-def _comments_path(project_root: Path, scene_path: str) -> Path:
-    chapter_dir = (project_root / scene_path).parent
-    return chapter_dir / "comments.yml"
+def _comments_path(scene_path: Path) -> Path:
+    return scene_path.parent / "comments.yml"
+
+
+def _validate_session_scene(slug: str, scene: str, chapter_dirs: list[str]) -> Path:
+    resolved = paths.resolve_in_project(slug, scene)
+    chapter_dir = str(Path(scene).parent)
+    if chapter_dir not in chapter_dirs:
+        raise HTTPException(status_code=404, detail="scene not in session chapters")
+    return resolved
 
 
 def _load_comments(project_root: Path, chapter_dirs: list[str], session_id: str) -> list[dict[str, Any]]:
@@ -104,8 +111,8 @@ def _load_comments(project_root: Path, chapter_dirs: list[str], session_id: str)
     return result
 
 
-def _save_comment(project_root: Path, scene_path: str, comment: dict[str, Any]) -> None:
-    path = _comments_path(project_root, scene_path)
+def _save_comment(scene_path: Path, comment: dict[str, Any]) -> None:
+    path = _comments_path(scene_path)
     existing: list[dict[str, Any]] = []
     if path.exists():
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
@@ -147,7 +154,7 @@ def resolve_token(token: str) -> tuple[dict[str, Any], str] | None:
             continue
         slug = project_dir.name
         for session in _load_sessions(slug):
-            if session.get("token") == token:
+            if secrets.compare_digest(str(session.get("token", "")), token):
                 return session, slug
     return None
 
@@ -270,6 +277,7 @@ def add_comment(token: str, body: CommentCreate, request: Request) -> dict[str, 
     session, slug = result
     if not session.get("active", True):
         raise HTTPException(status_code=404, detail="session revoked")
+    resolved_scene = _validate_session_scene(slug, body.scene, session.get("chapters", []))
     author = request.headers.get("X-Reviewer-Name", "Anonymous")
     comment: dict[str, Any] = {
         "id": str(uuid.uuid4()),
@@ -281,8 +289,7 @@ def add_comment(token: str, body: CommentCreate, request: Request) -> dict[str, 
         "created": datetime.now(timezone.utc).isoformat(),
         "resolved": False,
     }
-    project_root = config.WRITING_ROOT / slug
-    _save_comment(project_root, body.scene, comment)
+    _save_comment(resolved_scene, comment)
     return comment
 
 

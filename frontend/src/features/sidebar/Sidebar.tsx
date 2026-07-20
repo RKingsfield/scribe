@@ -20,7 +20,6 @@ import {
 } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
 import {
-  Act,
   CategoryData,
   ChapterEntry,
   ProjectTree,
@@ -31,6 +30,14 @@ import {
 import { syncEngine } from '../../lib/syncEngine';
 import { isOfflinePath } from '../../lib/offlineTree';
 import { resolveSceneMove } from '../../lib/sceneDrag';
+import {
+  ActGroup,
+  actZoneId,
+  groupChaptersByAct,
+  resolveChapterReorder,
+  statusClass,
+} from '../../lib/chapterDrag';
+import { toast } from '../../app/Toast';
 
 interface Props {
   tree: ProjectTree;
@@ -42,52 +49,10 @@ interface Props {
   onEditCategories?: () => void;
 }
 
-interface ActGroup {
-  act: Act | null;
-  chapters: ChapterEntry[];
-}
-
-function groupChaptersByAct(
-  tree: ProjectTree,
-  chapters: ChapterEntry[],
-): ActGroup[] {
-  const groups: ActGroup[] = tree.acts.map((a) => ({ act: a, chapters: [] }));
-  const unassigned: ChapterEntry[] = [];
-
-  for (const c of chapters) {
-    if (c.act) {
-      const idx = tree.acts.findIndex((a) => a.name === c.act);
-      if (idx !== -1) {
-        groups[idx].chapters.push(c);
-        continue;
-      }
-    }
-    unassigned.push(c);
-  }
-
-  if (tree.acts.length === 0) return [{ act: null, chapters }];
-  groups.push({ act: null, chapters: unassigned });
-  return groups;
-}
-
 const ACT_ZONE_PREFIX = 'act-zone:';
-const actZoneId = (actName: string | null) =>
-  `${ACT_ZONE_PREFIX}${actName ?? '__unassigned'}`;
-const isActZone = (id: string) => id.startsWith(ACT_ZONE_PREFIX);
-const actNameFromZone = (id: string): string | null => {
-  const name = id.slice(ACT_ZONE_PREFIX.length);
-  return name === '__unassigned' ? null : name;
-};
 
 const actWordCount = (g: ActGroup) =>
   g.chapters.reduce((acc, c) => acc + c.word_count, 0);
-
-
-const statusClass = (s: string | null | undefined): string => {
-  if (s === 'revision') return 'revision';
-  if (s === 'final') return 'final';
-  return 'draft';
-};
 
 /** Roll up scene statuses into a tri-state for the chapter row. */
 const aggregateStatus = (chapter: ChapterEntry): string => {
@@ -153,7 +118,9 @@ export function Sidebar({
         })
       : orderedChapters;
 
-  const groups = groupChaptersByAct(tree, effectiveChapters);
+  const groups = groupChaptersByAct(tree, effectiveChapters, {
+    alwaysIncludeUnassigned: true,
+  });
 
   const onDragEnd = async (e: DragEndEvent) => {
     if (!e.over) return;
@@ -207,79 +174,20 @@ export function Sidebar({
       return;
     }
 
-    const sourceChapter = orderedChapters.find((c) => c.path === e.active.id);
-    if (!sourceChapter) return;
-
-    const findActFor = (ch: ChapterEntry): string | null =>
-      groups.find((g) => g.chapters.some((c) => c.path === ch.path))?.act?.name ??
-      null;
-    const sourceAct = findActFor(sourceChapter);
-
-    let next: ChapterEntry[];
-    let targetAct: string | null;
-
-    if (isActZone(overId)) {
-      targetAct = actNameFromZone(overId);
-      const remaining = orderedChapters.filter(
-        (c) => c.path !== sourceChapter.path,
-      );
-      const targetGroupIdx = groups.findIndex(
-        (g) => (g.act?.name ?? null) === targetAct,
-      );
-      let insertAt = remaining.length;
-      if (targetGroupIdx !== -1) {
-        const targetGroup = groups[targetGroupIdx];
-        if (targetGroup.chapters.length > 0) {
-          const lastInGroup =
-            targetGroup.chapters[targetGroup.chapters.length - 1];
-          insertAt = remaining.findIndex((c) => c.path === lastInGroup.path) + 1;
-        } else {
-          let cursor = 0;
-          for (let i = 0; i < targetGroupIdx; i++) {
-            cursor += groups[i].chapters.length;
-          }
-          const oldIndex = orderedChapters.findIndex(
-            (c) => c.path === sourceChapter.path,
-          );
-          if (oldIndex >= 0 && oldIndex < cursor) cursor -= 1;
-          insertAt = cursor;
-        }
-      }
-      next = [...remaining];
-      next.splice(insertAt, 0, sourceChapter);
-    } else {
-      const targetChapter = orderedChapters.find((c) => c.path === overId);
-      if (!targetChapter || sourceChapter.path === targetChapter.path) return;
-      targetAct = findActFor(targetChapter);
-      const oldIndex = orderedChapters.findIndex(
-        (c) => c.path === sourceChapter.path,
-      );
-      const newIndex = orderedChapters.findIndex(
-        (c) => c.path === targetChapter.path,
-      );
-      next = arrayMove(orderedChapters, oldIndex, newIndex);
-    }
-
-    const actChanged = sourceAct !== targetAct;
-    setOrderedPaths(next.map((c) => c.path));
-
-    const payload = next.map((c, i) => {
-      const item: { path: string; order: number; act?: string | null } = {
-        path: c.meta_path,
-        order: i + 1,
-      };
-      if (actChanged && c.path === sourceChapter.path) {
-        item.act = targetAct ?? '';
-      }
-      return item;
+    const result = resolveChapterReorder(tree, orderedChapters, activeId, overId, {
+      actZonePrefix: ACT_ZONE_PREFIX,
+      groupOpts: { alwaysIncludeUnassigned: true },
     });
+    if (!result) return;
+
+    setOrderedPaths(result.chapters.map((c) => c.path));
 
     try {
-      await syncEngine.reorderItems(slug, payload);
+      await syncEngine.reorderItems(slug, result.payload);
       onTreeChanged();
       setOrderedPaths(null);
     } catch (err) {
-      alert(`Reorder failed: ${err}`);
+      toast(`Reorder failed: ${err}`, 'error');
       setOrderedPaths(null);
     }
   };
@@ -296,7 +204,7 @@ export function Sidebar({
       onTreeChanged();
       onSelect(r.first_scene_path);
     } catch (e) {
-      alert(`Failed to create ${kind}: ${e}`);
+      toast(`Failed to create ${kind}: ${e}`, 'error');
     }
   };
 
@@ -308,7 +216,7 @@ export function Sidebar({
       onTreeChanged();
       onSelect(r.path);
     } catch (e) {
-      alert(`Failed: ${e}`);
+      toast(`Failed: ${e}`, 'error');
     }
   };
 
@@ -493,7 +401,7 @@ function ActDropzone({
   actName: string | null;
   isEmpty: boolean;
 }) {
-  const id = actZoneId(actName);
+  const id = actZoneId(ACT_ZONE_PREFIX, actName);
   const { setNodeRef, isOver } = useDroppable({ id });
   const cls = `act-dropzone${isOver ? ' over' : ''}${isEmpty ? ' empty' : ''}`;
   return (
@@ -608,7 +516,7 @@ function ChapterCard({
       onTreeChanged();
       onSelect(r.path);
     } catch (err) {
-      alert(`Failed: ${err}`);
+      toast(`Failed: ${err}`, 'error');
     }
   };
 
@@ -624,7 +532,7 @@ function ChapterCard({
       await syncEngine.removeChapter(slug, chapter.slug);
       onTreeChanged();
     } catch (err) {
-      alert(`Failed to delete: ${err}`);
+      toast(`Failed to delete: ${err}`, 'error');
     }
   };
 
@@ -789,9 +697,13 @@ function SortableSceneRow(props: {
           onClick={async (e) => {
             e.stopPropagation();
             if (!confirm(`Delete scene ${props.scene.scene}?`)) return;
-            await deleteFile(props.slug, props.scene.path);
-            await syncEngine.getTree(props.slug, true);
-            props.onTreeChanged();
+            try {
+              await deleteFile(props.slug, props.scene.path);
+              await syncEngine.getTree(props.slug, true);
+              props.onTreeChanged();
+            } catch (err) {
+              toast(`Failed to delete: ${err}`, 'error');
+            }
           }}
         >
           <X size={14} />
@@ -950,7 +862,7 @@ function RefRow({
       await deleteFile(slug, item.path);
       onTreeChanged();
     } catch (err) {
-      alert(`Failed: ${err}`);
+      toast(`Failed: ${err}`, 'error');
     }
   };
 

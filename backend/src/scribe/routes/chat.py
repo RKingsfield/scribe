@@ -16,9 +16,10 @@ from ..chat.anthropic import (
     complete_anthropic,
     is_claude_model,
     stream_anthropic,
+    strip_think_blocks,
     synthetic_models,
 )
-from ..chat.context import ScopeBundle, ScopeRequest, build_bundle, render_system_prompt
+from ..chat.context import ScopeBundle, ScopeRequest, build_bundle, build_codex, render_system_prompt
 from ..storage import frontmatter as fm
 from ..storage.project import load_project
 from ..storage import paths
@@ -174,9 +175,7 @@ def _build_rewrite_payload(slug: str, req: RewriteRequest) -> dict[str, Any]:
         f"markdown fences. No explanation.",
     ]
     if req.include_codex:
-        from ..chat.context import _build_codex
-
-        codex = _build_codex(project_root)
+        codex = build_codex(project_root)
         if codex:
             parts.append("")
             parts.append("---")
@@ -315,7 +314,7 @@ async def summarize(slug: str, req: SummarizeRequest) -> SummarizeResponse:
         summary = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError):
         raise HTTPException(502, f"unexpected orchestrator response: {data!r}")
-    return SummarizeResponse(summary=str(summary).strip())
+    return SummarizeResponse(summary=strip_think_blocks(str(summary)).strip())
 
 
 class ModelEntry(BaseModel):

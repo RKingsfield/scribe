@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from typing import Any
 
 WRITING_ROOT = Path(os.environ.get("WRITING_ROOT", "/data/writing"))
 APPDATA_ROOT = Path(os.environ.get("APPDATA_ROOT", "/data/appdata"))
@@ -17,6 +18,15 @@ STATIC_ROOT = Path(os.environ.get("STATIC_ROOT", "/app/static"))
 
 GIT_AUTHOR_NAME = os.environ.get("GIT_AUTHOR_NAME", "Scribe Auto")
 GIT_AUTHOR_EMAIL = os.environ.get("GIT_AUTHOR_EMAIL", "scribe@scribe.local")
+
+SCRIBE_AUTOCOMMIT_DISABLED = os.environ.get("SCRIBE_AUTOCOMMIT_DISABLED") == "1"
+AUTOCOMMIT_INTERVAL_MIN = int(os.environ.get("AUTOCOMMIT_INTERVAL_MIN", "10"))
+
+
+def forgejo_token() -> str:
+    # read live, not cached at import: tests delete/restore this env var per-test
+    return os.environ.get("FORGEJO_TOKEN", "")
+
 
 # RAG chunking / embedding defaults
 RAG_CHUNK_SIZE = 500
@@ -41,3 +51,19 @@ RAG_MAX_QUERY_LIMIT = 50
 
 # Structure ops
 MAX_CHAPTER_SLOT_SEARCH = 1000
+
+# Synthetic model entries surfaced through /api/models when an
+# ANTHROPIC_API_KEY is configured. All listed models natively support a
+# 1M-token context window — no beta header required.
+CLAUDE_MODELS: list[dict[str, Any]] = [
+    {
+        "id": "claude-opus-4-8",
+        "owned_by": "anthropic",
+        "tags": ["claude", "big-context", "1M"],
+    },
+    {
+        "id": "claude-sonnet-5",
+        "owned_by": "anthropic",
+        "tags": ["claude", "big-context", "1M"],
+    },
+]

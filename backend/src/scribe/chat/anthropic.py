@@ -17,22 +17,6 @@ ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=30.0)
 
-# Synthetic model entries surfaced through /api/models when an
-# ANTHROPIC_API_KEY is configured. All listed models natively support a
-# 1M-token context window — no beta header required.
-CLAUDE_MODELS: list[dict[str, Any]] = [
-    {
-        "id": "claude-opus-4-7",
-        "owned_by": "anthropic",
-        "tags": ["claude", "big-context", "1M"],
-    },
-    {
-        "id": "claude-sonnet-4-6",
-        "owned_by": "anthropic",
-        "tags": ["claude", "big-context", "1M"],
-    },
-]
-
 
 def is_claude_model(model: str | None) -> bool:
     return bool(model) and str(model).startswith("claude")
@@ -42,7 +26,7 @@ def synthetic_models() -> list[dict[str, Any]]:
     """Return Claude entries to advertise iff a key is configured."""
     if not config.ANTHROPIC_API_KEY:
         return []
-    return [dict(m) for m in CLAUDE_MODELS]
+    return [dict(m) for m in config.CLAUDE_MODELS]
 
 
 def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:

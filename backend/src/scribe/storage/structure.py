@@ -45,13 +45,14 @@ def list_chapter_dirs(project_root: Path) -> list[ChapterDir]:
 
 
 def list_scenes(project_root: Path, chapter_slug: str) -> list[SceneFile]:
-    # BUG: *.md glob includes conflict files (*.conflict.*.md) as phantom scenes
     chapter_path = project_root / "chapters" / chapter_slug
     if not chapter_path.is_dir():
         return []
     out: list[SceneFile] = []
     for fp in sorted(chapter_path.glob("*.md")):
         if fp.name == CHAPTER_META_BASENAME:
+            continue
+        if ".conflict." in fp.name:
             continue
         out.append(
             SceneFile(

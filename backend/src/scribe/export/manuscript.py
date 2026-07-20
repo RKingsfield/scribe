@@ -9,7 +9,7 @@ from typing import Any
 
 from ..storage import frontmatter as fm
 from ..storage import paths, structure
-from ..storage.helpers import ORDER_FALLBACK
+from ..storage.helpers import coerce_order, order_sort_key
 
 
 SCENE_BEAT_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
@@ -44,15 +44,6 @@ def strip_scene_beats(body: str) -> str:
     return SCENE_BEAT_RE.sub("", body)
 
 
-def coerce_float(v: object) -> float:
-    if isinstance(v, (int, float)):
-        return float(v)
-    try:
-        return float(str(v))
-    except (TypeError, ValueError):
-        return ORDER_FALLBACK
-
-
 def walk_chapters(
     project_root: Path,
     chapter_filter: set[str] | None = None,
@@ -62,12 +53,12 @@ def walk_chapters(
     if chapter_filter is not None:
         chapter_dirs = [ch for ch in chapter_dirs if ch.rel_path in chapter_filter]
 
-    entries: list[tuple[float, structure.ChapterDir, dict[str, Any], str]] = []
+    entries: list[tuple[float | None, structure.ChapterDir, dict[str, Any], str]] = []
     for ch in chapter_dirs:
         meta_text = (project_root / ch.meta_rel_path).read_text(encoding="utf-8")
         meta, body = fm.parse(meta_text)
-        entries.append((coerce_float(meta.get("order")), ch, meta, body))
-    entries.sort(key=lambda t: (t[0], t[1].slug))
+        entries.append((coerce_order(meta.get("order")), ch, meta, body))
+    entries.sort(key=lambda t: order_sort_key(t[0], t[1].slug))
 
     result: list[ChapterData] = []
     for _, ch, ch_meta, ch_body in entries:
@@ -80,12 +71,12 @@ def walk_chapters(
             scenes=[],
         )
         scenes = structure.list_scenes(project_root, ch.slug)
-        scene_entries: list[tuple[float, str, dict[str, Any], str]] = []
+        scene_entries: list[tuple[float | None, str, dict[str, Any], str]] = []
         for s in scenes:
             text = (project_root / s.rel_path).read_text(encoding="utf-8")
             meta, body = fm.parse(text)
-            scene_entries.append((coerce_float(meta.get("order")), s.rel_path, meta, body))
-        scene_entries.sort(key=lambda t: (t[0], t[1]))
+            scene_entries.append((coerce_order(meta.get("order")), s.rel_path, meta, body))
+        scene_entries.sort(key=lambda t: order_sort_key(t[0], t[1]))
 
         for _, rel_path, s_meta, s_body in scene_entries:
             chapter.scenes.append(SceneData(

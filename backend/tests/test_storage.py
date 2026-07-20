@@ -19,6 +19,18 @@ def test_path_escape_blocked(sample_project: Path) -> None:
         paths.resolve_in_project("example-novel", "chapters/../../escape.md")
 
 
+def test_null_byte_path_blocked(sample_project: Path) -> None:
+    with pytest.raises(HTTPException) as exc:
+        paths.resolve_in_project("example-novel", "chapters/01_Chapter_01/01.md\x00.txt")
+    assert exc.value.status_code == 400
+
+
+def test_null_byte_slug_blocked(writing_root: Path) -> None:
+    with pytest.raises(HTTPException) as exc:
+        paths.project_root("bar\x00row", must_exist=False)
+    assert exc.value.status_code == 400
+
+
 def test_invalid_slug_blocked(writing_root: Path) -> None:
     for bad in ["", "../foo", "foo/bar", ".hidden"]:
         with pytest.raises(HTTPException):

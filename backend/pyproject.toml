@@ -16,9 +16,37 @@ dependencies = [
   "markdown>=3.5",
 ]
 
+[project.optional-dependencies]
+test = [
+  "pytest>=8.0",
+  "ruff>=0.15",
+  "mypy>=1.10",
+  "types-PyYAML",
+  "types-Markdown",
+]
+
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.mypy]
+python_version = "3.12"
+
+[[tool.mypy.overrides]]
+module = "scribe.*"
+disallow_untyped_defs = true
+disallow_any_generics = true
+
+[[tool.mypy.overrides]]
+module = "frontmatter"
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "apscheduler.*"
+ignore_missing_imports = true

@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
 
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -20,7 +18,7 @@ _scheduler: BackgroundScheduler | None = None
 
 
 def _ensure_remote_setup(repo: Repo, slug: str) -> bool:
-    token = os.environ.get("FORGEJO_TOKEN", "")
+    token = config.forgejo_token()
     if not (config.FORGEJO_BASE_URL and config.FORGEJO_USER and token):
         return False
     repo_name = forgejo.repo_name_for(slug)
@@ -81,7 +79,7 @@ def start_scheduler() -> None:
     global _scheduler
     if _scheduler is not None:
         return
-    interval = int(os.environ.get("AUTOCOMMIT_INTERVAL_MIN", "10"))
+    interval = config.AUTOCOMMIT_INTERVAL_MIN
     _scheduler = BackgroundScheduler(timezone="UTC")
     _scheduler.add_job(
         commit_all_projects,
