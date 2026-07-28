@@ -15,7 +15,6 @@ log = logging.getLogger(__name__)
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
-ANTHROPIC_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=30.0)
 
 
 def is_claude_model(model: str | None) -> bool:
@@ -120,7 +119,7 @@ async def complete_anthropic(openai_body: dict[str, Any]) -> str:
         "anthropic-version": ANTHROPIC_VERSION,
         "content-type": "application/json",
     }
-    async with httpx.AsyncClient(timeout=ANTHROPIC_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client:
         r = await client.post(ANTHROPIC_URL, headers=headers, json=body)
     if r.status_code >= 400:
         raise RuntimeError(f"Anthropic {r.status_code}: {r.text[:500]}")
@@ -153,7 +152,7 @@ async def stream_anthropic(openai_body: dict[str, Any]) -> AsyncIterator[bytes]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=ANTHROPIC_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client:
             async with client.stream("POST", ANTHROPIC_URL, json=body, headers=headers) as resp:
                 if resp.status_code >= 400:
                     err_text = await resp.aread()

@@ -104,8 +104,8 @@ React 18 + Vite + TypeScript + CodeMirror 6 + Dexie + cmdk.
 src/
   app/                 # App.tsx (router), CommandPalette (cmdk), StatusBar, Toast
   features/
-    project/           # ProjectView (shell), WriteView (3-pane), ChapterFlow, PlanBoard, Inspector, ReviewView
-    sidebar/           # Sidebar.tsx -- act-grouped chapters, drag-reorderable, dynamic categories
+    project/           # ProjectView (shell), WriteView (3-pane), ChapterFlow, PlanBoard (+ OutlineBoard, StatusBoard), Inspector, ReviewView
+    sidebar/           # Sidebar (orchestrator), ChapterCard, RefList -- act-grouped chapters, drag-reorderable, dynamic categories
     editor/            # Editor.tsx (CM6), codexLink, liveMarkdown, typewriter, detectKind
     chat/              # ChatView, ScopePicker, ChatThread, streaming.ts, threads.ts
     rewrite/           # RewriteDialog, diff.ts (word-level LCS)

@@ -159,6 +159,14 @@ All AI helpers share one `localStorage` key, exposed in the rewrite dialogue hea
 
 ---
 
+## Future
+
+### Project archival workflow
+
+Projects will cap at roughly a dozen. As completed novels accumulate, a "finalise / archive" state would let the app skip finished projects for sync keepalive polling and review-token walks. No design yet — raised during the third codebase review (2026-07-27) when examining the O(projects) review-token lookup.
+
+---
+
 ## Accepted limitations
 
 ### Offline structure ops vs. concurrent structural edits

@@ -8,7 +8,7 @@
 
 export type DiffSeg = { type: 'eq' | 'add' | 'del'; text: string };
 
-export function tokenize(text: string): string[] {
+function tokenize(text: string): string[] {
   // split on whitespace boundaries but keep the whitespace as its own tokens
   const out: string[] = [];
   const re = /(\s+)|([^\s]+)/g;

@@ -28,7 +28,7 @@ def sample_project(writing_root: Path) -> Path:
 
     (proj / "chapters" / "01_Chapter_01" / "chapter.md").write_text(
         "---\ntitle: Chapter 1\nsummary: Opens on the killing ground.\n"
-        "chapter: 1\norder: 1\nstatus: draft\nwords_target: 3000\npov: Tarn\n---\n",
+        "chapter: 1\norder: 1\n---\n",
         encoding="utf-8",
     )
     (proj / "chapters" / "01_Chapter_01" / "01.md").write_text(

@@ -49,21 +49,18 @@ def _validate_slug(s: str) -> None:
         raise HTTPException(400, f"Invalid slug: {s!r} (lowercase, digits, _-)")
 
 
-@router.post("/chapter/new")
-def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
-    root = paths.project_root(slug)
-    chapters_dir = root / "chapters"
-    chapters_dir.mkdir(parents=True, exist_ok=True)
-
-    # Walk every existing chapter dir once to compute:
-    #  - max position (leading slug number) → next dir position
-    #  - max chapter ordinal (frontmatter `chapter:`, only chapter-kind dirs)
-    #  - max interlude ordinal (frontmatter `interlude:` or trailing slug
-    #    number, only interlude-kind dirs)
+def _scan_existing_chapters(chapters_dir: Path) -> tuple[int, int, int, dict[str, bool]]:
+    """Walk every existing chapter dir once to compute:
+    - max position (leading slug number) → next dir position
+    - max chapter ordinal (frontmatter `chapter:`, only chapter-kind dirs)
+    - max interlude ordinal (frontmatter `interlude:` or trailing slug
+      number, only interlude-kind dirs)
+    - existing_dirs: slug -> non_empty
+    """
     max_position = 0
     max_chapter_ordinal = 0
     max_interlude_ordinal = 0
-    existing_dirs: dict[str, bool] = {}  # slug -> non_empty
+    existing_dirs: dict[str, bool] = {}
     for d in chapters_dir.iterdir():
         if not d.is_dir() or d.name.startswith("."):
             continue
@@ -89,6 +86,18 @@ def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
                 int_n = meta.get("interlude")
                 if isinstance(int_n, int) and int_n > max_interlude_ordinal:
                     max_interlude_ordinal = int_n
+    return max_position, max_chapter_ordinal, max_interlude_ordinal, existing_dirs
+
+
+def _compute_chapter_slot(
+    chapters_dir: Path, body: NewChapterRequest
+) -> tuple[str, Path, int, int]:
+    """Pick (or validate) the chapter slug/dir/ordinal/position for a new chapter,
+    reusing empty orphan dirs where possible. Returns
+    (chapter_slug, chapter_dir, ordinal, position)."""
+    max_position, max_chapter_ordinal, max_interlude_ordinal, existing_dirs = (
+        _scan_existing_chapters(chapters_dir)
+    )
 
     if body.slug:
         # Caller supplied an explicit slug — respect it; collide loudly
@@ -103,31 +112,41 @@ def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
             else max_interlude_ordinal + 1
         )
         position = slug_position(chapter_slug) or (max_position + 1)
-    else:
-        # Auto-pick. Position = next free leading number. Ordinal = max
-        # of own kind + 1. Slug is `{pos:02d}_{Kind}_{ord:02d}`. If the
-        # candidate dir collides with a non-empty existing dir we walk
-        # the position upward; an empty dir is fair game.
-        ordinal = (
-            body.chapter
-            if body.chapter is not None
-            else (
-                max_chapter_ordinal + 1 if body.kind == "chapter"
-                else max_interlude_ordinal + 1
-            )
-        )
-        kind_label = "Chapter" if body.kind == "chapter" else "Interlude"
-        position = max_position + 1
-        for _ in range(config.MAX_CHAPTER_SLOT_SEARCH):
-            chapter_slug = f"{position:02d}_{kind_label}_{ordinal:02d}"
-            non_empty = existing_dirs.get(chapter_slug, False)
-            if not non_empty:
-                break
-            position += 1
-        else:
-            raise HTTPException(500, "Could not find a free chapter slot")
-        chapter_dir = chapters_dir / chapter_slug
+        return chapter_slug, chapter_dir, ordinal, position
 
+    # Auto-pick. Position = next free leading number. Ordinal = max
+    # of own kind + 1. Slug is `{pos:02d}_{Kind}_{ord:02d}`. If the
+    # candidate dir collides with a non-empty existing dir we walk
+    # the position upward; an empty dir is fair game.
+    ordinal = (
+        body.chapter
+        if body.chapter is not None
+        else (
+            max_chapter_ordinal + 1 if body.kind == "chapter"
+            else max_interlude_ordinal + 1
+        )
+    )
+    kind_label = "Chapter" if body.kind == "chapter" else "Interlude"
+    position = max_position + 1
+    for _ in range(config.MAX_CHAPTER_SLOT_SEARCH):
+        chapter_slug = f"{position:02d}_{kind_label}_{ordinal:02d}"
+        non_empty = existing_dirs.get(chapter_slug, False)
+        if not non_empty:
+            break
+        position += 1
+    else:
+        raise HTTPException(500, "Could not find a free chapter slot")
+    chapter_dir = chapters_dir / chapter_slug
+    return chapter_slug, chapter_dir, ordinal, position
+
+
+def _write_chapter_files(
+    chapter_dir: Path,
+    chapter_slug: str,
+    ordinal: int,
+    position: int,
+    body: NewChapterRequest,
+) -> dict[str, Any]:
     chapter_dir.mkdir(parents=True, exist_ok=True)
 
     if body.kind == "chapter":
@@ -164,6 +183,16 @@ def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
         "meta_path": f"chapters/{chapter_slug}/chapter.md",
         "first_scene_path": f"chapters/{chapter_slug}/01.md",
     }
+
+
+@router.post("/chapter/new")
+def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
+    root = paths.project_root(slug)
+    chapters_dir = root / "chapters"
+    chapters_dir.mkdir(parents=True, exist_ok=True)
+
+    chapter_slug, chapter_dir, ordinal, position = _compute_chapter_slot(chapters_dir, body)
+    return _write_chapter_files(chapter_dir, chapter_slug, ordinal, position, body)
 
 
 @router.delete("/chapter/{chapter_slug}", status_code=204)

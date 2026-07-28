@@ -29,9 +29,6 @@ export interface ChapterEntry {
   chapter: number | null;     // ordinal among chapters
   interlude: number | null;   // ordinal among interludes
   order: number | null;
-  pov: string | null;
-  status: string | null;
-  words_target: number | null;
   act: string | null;
   scenes: SceneEntry[];
   word_count: number;
@@ -277,7 +274,7 @@ export async function newCategoryEntry(
   );
 }
 
-export interface ChatMessage {
+interface ChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
 }
@@ -376,7 +373,7 @@ export async function streamChat(
   return r;
 }
 
-export interface QdrantStatus {
+interface QdrantStatus {
   exists: boolean;
   points_count?: number | null;
   vectors_count?: number | null;
@@ -502,13 +499,13 @@ export interface ReviewComment {
   resolved: boolean;
 }
 
-export interface ManuscriptScene {
+interface ManuscriptScene {
   path: string;
   title: string;
   html: string;
 }
 
-export interface ManuscriptChapter {
+interface ManuscriptChapter {
   slug: string;
   title: string;
   number: number | null;

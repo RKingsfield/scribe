@@ -36,6 +36,9 @@ export function groupChaptersByAct(
   return groups;
 }
 
+export const SIDEBAR_ACT_ZONE_PREFIX = 'act-zone:';
+export const OUTLINE_ACT_ZONE_PREFIX = 'outline-act-zone:';
+
 export function actZoneId(prefix: string, actName: string | null): string {
   return `${prefix}${actName ?? '__unassigned'}`;
 }

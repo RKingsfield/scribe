@@ -210,6 +210,7 @@ export function WriteView() {
   useEffect(() => {
     if (!slug || !activePath) return;
     if (inFlowMode) return; // ChapterFlow loads scenes itself
+    if (saveTimer.current) window.clearTimeout(saveTimer.current);
     setFile(null);
     setSaveState('clean');
     syncEngine
@@ -371,11 +372,9 @@ export function WriteView() {
         <aside className="inspector">
           {tree && (
             <Inspector
-              tree={tree}
               activePath={activePath}
               frontmatter={frontmatter}
               body={body}
-              liveWordCount={liveWordCount}
               codex={codex}
               onChange={onFrontmatterChange}
               onSelect={setActivePath}

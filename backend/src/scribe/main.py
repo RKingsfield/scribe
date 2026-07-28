@@ -1,3 +1,4 @@
+import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import Any
@@ -9,6 +10,12 @@ from fastapi.staticfiles import StaticFiles
 from . import __version__
 from .config import SCRIBE_AUTOCOMMIT_DISABLED, STATIC_ROOT, WRITING_ROOT
 from .routes import chat, export, files, git as git_routes, projects, rag, review, structure_ops, sync
+
+logging.basicConfig(
+    format="%(asctime)s %(levelname)s %(name)s — %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    level=logging.INFO,
+)
 
 
 @asynccontextmanager
@@ -64,7 +71,7 @@ if STATIC_ROOT.exists():
         survives a hard refresh (e.g. /p/<slug>/write?path=...)."""
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404)
-        candidate = STATIC_ROOT / full_path
-        if full_path and candidate.is_file():
+        candidate = (STATIC_ROOT / full_path).resolve()
+        if full_path and candidate.is_file() and str(candidate).startswith(str(STATIC_ROOT.resolve())):
             return FileResponse(candidate)
         return FileResponse(STATIC_ROOT / "index.html")

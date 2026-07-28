@@ -47,7 +47,7 @@ export function ReviewView() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this review session and all its comments?')) return;
+    if (!window.confirm('Delete this review session and all its comments?')) return;
     await deleteReviewSession(slug, id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeSession?.id === id) setActiveSession(null);

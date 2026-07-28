@@ -50,7 +50,7 @@ def _recipe_path(slug: str) -> Path:
 async def _qdrant_status(coll: str) -> QdrantStatus:
     url = f"{config.QDRANT_URL.rstrip('/')}/collections/{coll}"
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
+        async with httpx.AsyncClient(timeout=config.QDRANT_TIMEOUT) as client:
             r = await client.get(url)
             if r.status_code == 404:
                 return QdrantStatus(exists=False)
@@ -133,7 +133,7 @@ async def delete_collection(slug: str) -> Response:
     coll = collection_name(slug)
     url = f"{config.QDRANT_URL.rstrip('/')}/collections/{coll}"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=config.FORGEJO_TIMEOUT) as client:
             r = await client.delete(url)
             if r.status_code not in (200, 404):
                 r.raise_for_status()
@@ -161,7 +161,7 @@ class RagQueryResponse(BaseModel):
 async def _embed(text: str) -> tuple[list[float], int]:
     url = f"{config.EMBED_URL.rstrip('/')}/embed"
     body = {"texts": [text]}
-    async with httpx.AsyncClient(timeout=15.0) as client:
+    async with httpx.AsyncClient(timeout=config.RAG_INGEST_TIMEOUT) as client:
         r = await client.post(url, json=body)
         r.raise_for_status()
         data = r.json()
@@ -190,7 +190,7 @@ async def query(slug: str, body: RagQuery) -> RagQueryResponse:
         "with_payload": True,
     }
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=config.RAG_INGEST_TIMEOUT) as client:
             r = await client.post(search_url, json=payload)
             if r.status_code == 404:
                 raise HTTPException(

@@ -1,27 +1,21 @@
 import { useMemo } from 'react';
-import { ChapterEntry, ProjectTree } from '../../lib/api';
+
 import { CodexEntry, detectCharacters } from '../editor/codexLink';
 import { detectKind } from '../editor/detectKind';
 
 interface Props {
-  tree: ProjectTree;
   activePath: string | null;
   frontmatter: Record<string, unknown>;
   body: string;
-  liveWordCount: number;
   codex: readonly CodexEntry[];
   onChange: (next: Record<string, unknown>) => void;
   onSelect: (path: string) => void;
 }
 
-const STATUSES = ['draft', 'revision', 'final'] as const;
-
 export function Inspector({
-  tree,
   activePath,
   frontmatter,
   body,
-  liveWordCount,
   codex,
   onChange,
   onSelect,
@@ -40,17 +34,6 @@ export function Inspector({
     return detectCharacters(body, codex);
   }, [body, codex]);
 
-  const enclosingChapter = useMemo<ChapterEntry | null>(() => {
-    if (!activePath) return null;
-    return (
-      tree.chapters.find(
-        (c) =>
-          c.meta_path === activePath ||
-          c.scenes.some((s) => s.path === activePath),
-      ) ?? null
-    );
-  }, [tree, activePath]);
-
   if (!activePath) {
     return (
       <div className="inspector-body">
@@ -62,7 +45,7 @@ export function Inspector({
   return (
     <div className="inspector-body">
       <section className="inspector-section">
-        <h4>{kind === 'chapter' ? 'Chapter' : kind === 'scene' ? 'Scene' : 'Reference'}</h4>
+        <h4>{kind === 'chapter' ? 'Chapter' : 'Reference'}</h4>
         <div className="field">
           <span className="field-label">Title</span>
           <input
@@ -71,72 +54,15 @@ export function Inspector({
           />
         </div>
 
-        {(kind === 'chapter' || kind === 'scene') && (
+        {kind === 'chapter' && (
           <div className="field">
             <span className="field-label">Summary</span>
             <textarea
               rows={3}
               value={(frontmatter.summary as string) ?? ''}
               onChange={(e) => update({ summary: e.target.value })}
-              placeholder={
-                kind === 'chapter'
-                  ? 'What happens in this chapter (shown in sidebar + corkboard)'
-                  : 'What happens in this scene'
-              }
+              placeholder="What happens in this chapter (shown in sidebar + corkboard)"
             />
-          </div>
-        )}
-
-        {kind === 'scene' && (
-          <div className="row">
-            <div className="field">
-              <span className="field-label">Status</span>
-              <select
-                value={(frontmatter.status as string) ?? 'draft'}
-                onChange={(e) => update({ status: e.target.value })}
-              >
-                {STATUSES.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-            <div className="field">
-              <span className="field-label">POV</span>
-              <input
-                value={(frontmatter.pov as string) ?? ''}
-                onChange={(e) =>
-                  e.target.value
-                    ? update({ pov: e.target.value })
-                    : removeKey('pov')
-                }
-                placeholder="(inherits from chapter)"
-              />
-            </div>
-          </div>
-        )}
-
-        {kind === 'scene' && (
-          <div className="row">
-            <div className="field">
-              <span className="field-label">Words</span>
-              <input
-                value={liveWordCount.toLocaleString()}
-                readOnly
-              />
-            </div>
-            <div className="field">
-              <span className="field-label">Word target</span>
-              <input
-                type="number"
-                min={0}
-                value={numOrNull(frontmatter.words_target) ?? ''}
-                onChange={(e) =>
-                  e.target.value === ''
-                    ? removeKey('words_target')
-                    : update({ words_target: Number(e.target.value) })
-                }
-              />
-            </div>
           </div>
         )}
 
@@ -223,9 +149,9 @@ export function Inspector({
         )}
       </section>
 
-      {(kind === 'chapter' || kind === 'scene') && detectedChars.length > 0 && (
+      {kind === 'chapter' && detectedChars.length > 0 && (
         <section className="inspector-section">
-          <h4>Characters in scene</h4>
+          <h4>Characters detected</h4>
           <div className="chip-row">
             {detectedChars.map((c) => (
               <button
@@ -238,31 +164,6 @@ export function Inspector({
               </button>
             ))}
           </div>
-        </section>
-      )}
-
-      {kind === 'scene' && enclosingChapter && enclosingChapter.scenes.length > 1 && (
-        <section className="inspector-section">
-          <h4>In this chapter</h4>
-          <ul className="ref-list" style={{ marginBottom: '-0.25rem' }}>
-            {enclosingChapter.scenes.map((s) => (
-              <li
-                key={s.path}
-                className={`ref-row${s.path === activePath ? ' active' : ''}`}
-                onClick={() => onSelect(s.path)}
-              >
-                <span className="chapter-num">
-                  {enclosingChapter.chapter ?? '·'}.{s.scene ?? '·'}
-                </span>
-                <span className="ref-title">
-                  {s.title || `Scene ${s.scene ?? ''}`}
-                </span>
-                <span className="ref-aliases">
-                  {s.word_count.toLocaleString()}w
-                </span>
-              </li>
-            ))}
-          </ul>
         </section>
       )}
     </div>
@@ -279,4 +180,3 @@ function asList(v: unknown): string[] | null {
   if (Array.isArray(v)) return v.map(String);
   return null;
 }
-

@@ -622,9 +622,6 @@ describe('syncEngine network-error detection', () => {
         chapter: 1,
         interlude: null,
         order: 1,
-        pov: null,
-        status: null,
-        words_target: null,
         act: null,
         word_count: 0,
         scenes: [
@@ -701,9 +698,6 @@ describe('syncEngine network-error detection', () => {
         chapter: 1,
         interlude: null,
         order: 1,
-        pov: null,
-        status: null,
-        words_target: null,
         act: null,
         word_count: 0,
         scenes: [
@@ -758,9 +752,6 @@ describe('syncEngine network-error detection', () => {
         chapter: 1,
         interlude: null,
         order: 1,
-        pov: null,
-        status: null,
-        words_target: null,
         act: null,
         word_count: 0,
         scenes: [
@@ -846,9 +837,6 @@ describe('syncEngine deleteScene / deleteCategoryEntry', () => {
         chapter: 1,
         interlude: null,
         order: 1,
-        pov: null,
-        status: null,
-        words_target: null,
         act: null,
         scenes: [
           {

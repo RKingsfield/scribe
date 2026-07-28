@@ -26,9 +26,6 @@ from ..storage import paths
 
 log = logging.getLogger(__name__)
 
-ORCHESTRATOR_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=30.0)
-SUMMARIZE_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=30.0)
-MODELS_TIMEOUT = 10.0
 
 router = APIRouter(prefix="/api/projects/{slug}/chat", tags=["chat"])
 models_router = APIRouter(prefix="/api", tags=["chat"])
@@ -78,7 +75,7 @@ async def _stream_orchestrator(
             yield chunk
         return
     try:
-        async with httpx.AsyncClient(timeout=ORCHESTRATOR_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client:
             async with client.stream("POST", url, json=body) as resp:
                 if resp.status_code >= 400:
                     err_text = await resp.aread()
@@ -303,7 +300,7 @@ async def summarize(slug: str, req: SummarizeRequest) -> SummarizeResponse:
 
     url = f"{config.ORCHESTRATOR_URL.rstrip('/')}/v1/chat/completions"
     try:
-        async with httpx.AsyncClient(timeout=SUMMARIZE_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=config.SUMMARIZE_TIMEOUT) as client:
             r = await client.post(url, json=payload)
     except httpx.HTTPError as e:
         raise HTTPException(502, f"orchestrator unreachable: {e}")
@@ -329,7 +326,7 @@ async def list_models() -> JSONResponse:
     url = f"{config.ORCHESTRATOR_URL.rstrip('/')}/v1/models"
     cleaned: list[dict[str, Any]] = []
     try:
-        async with httpx.AsyncClient(timeout=MODELS_TIMEOUT) as client:
+        async with httpx.AsyncClient(timeout=config.MODELS_TIMEOUT) as client:
             r = await client.get(url)
             r.raise_for_status()
             payload = r.json()

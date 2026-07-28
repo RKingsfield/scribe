@@ -36,9 +36,6 @@ function makeTestTree(): ProjectTree {
         chapter: 1,
         interlude: null,
         order: 1,
-        pov: null,
-        status: null,
-        words_target: null,
         act: 'Act 1',
         scenes: [
           makeScene({ path: 'chapters/01_Chapter_01/01.md', order: 1, scene: 1 }),
@@ -57,9 +54,6 @@ function makeTestTree(): ProjectTree {
         chapter: 2,
         interlude: null,
         order: 2,
-        pov: null,
-        status: null,
-        words_target: null,
         act: 'Act 1',
         scenes: [
           makeScene({ path: 'chapters/02_Chapter_02/01.md', order: 1, scene: 1 }),

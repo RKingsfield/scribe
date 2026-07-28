@@ -30,7 +30,7 @@ def test_get_project_tree_nested(sample_project: Path) -> None:
     assert ch1["path"] == "chapters/01_Chapter_01"
     assert ch1["meta_path"] == "chapters/01_Chapter_01/chapter.md"
     assert ch1["title"] == "Chapter 1"
-    assert ch1["pov"] == "Tarn"
+    assert "pov" not in ch1
     assert len(ch1["scenes"]) == 1
     assert ch1["word_count"] >= 4
     assert ch1["scenes"][0]["path"] == "chapters/01_Chapter_01/01.md"

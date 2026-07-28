@@ -90,7 +90,7 @@ export const ChapterFlow = forwardRef<ChapterFlowHandle, Props>(function Chapter
       await syncEngine.saveFile(slug, chapter.meta_path, f.body, { ...f.frontmatter, title: trimmed }, f.etag);
       onTreeChanged();
     } catch (e) {
-      console.error('Failed to save chapter title', e);
+      toast(`Failed to save chapter title: ${e}`, 'error');
     }
   }, [slug, chapter.meta_path, chapter.title, chapter.slug, titleDraft, onTreeChanged]);
 
@@ -393,6 +393,7 @@ function SceneBlock({
       .catch((e) => !cancelled && setError(String(e)));
     return () => {
       cancelled = true;
+      if (saveTimer.current) window.clearTimeout(saveTimer.current);
     };
   }, [slug, scene.path, setSaveState]);
 

@@ -69,7 +69,7 @@ export function RagPanel({ slug, open, onClose }: Props) {
   };
 
   const dropCollection = async () => {
-    if (!confirm(`Drop Qdrant collection "${state?.collection}"? You'll need to re-ingest after this.`)) return;
+    if (!window.confirm(`Drop Qdrant collection "${state?.collection}"? You'll need to re-ingest after this.`)) return;
     setBusy('drop');
     setError(null);
     try {

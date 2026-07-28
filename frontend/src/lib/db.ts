@@ -1,7 +1,7 @@
 import Dexie, { Table } from 'dexie';
 import type { ChatScope, ProjectTree } from './api';
 
-export interface CachedFile {
+interface CachedFile {
   // composite key "<slug>::<path>"
   key: string;
   slug: string;
@@ -12,7 +12,7 @@ export interface CachedFile {
   cachedAt: number;
 }
 
-export interface PendingWrite {
+interface PendingWrite {
   id?: number;
   slug: string;
   path: string;
@@ -35,18 +35,18 @@ export interface ConflictMarker {
   noticedAt: number;
 }
 
-export interface KV {
+interface KV {
   key: string;
   value: string;
 }
 
-export interface CachedTree {
+interface CachedTree {
   slug: string;
   tree: ProjectTree;
   cachedAt: number;
 }
 
-export interface StructureOp {
+interface StructureOp {
   id?: number;
   slug: string;
   op: 'new-chapter' | 'new-scene' | 'new-category-entry' | 'delete-chapter' | 'reorder' | 'move-scene';

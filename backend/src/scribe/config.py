@@ -2,6 +2,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import httpx
+
 WRITING_ROOT = Path(os.environ.get("WRITING_ROOT", "/data/writing"))
 APPDATA_ROOT = Path(os.environ.get("APPDATA_ROOT", "/data/appdata"))
 ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://localhost")
@@ -51,6 +53,14 @@ RAG_MAX_QUERY_LIMIT = 50
 
 # Structure ops
 MAX_CHAPTER_SLOT_SEARCH = 1000
+
+# HTTP client timeouts
+LLM_STREAM_TIMEOUT = httpx.Timeout(connect=10.0, read=600.0, write=30.0, pool=30.0)
+SUMMARIZE_TIMEOUT = httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=30.0)
+MODELS_TIMEOUT = 10.0
+QDRANT_TIMEOUT = 5.0
+FORGEJO_TIMEOUT = 10.0
+RAG_INGEST_TIMEOUT = 15.0
 
 # Synthetic model entries surfaced through /api/models when an
 # ANTHROPIC_API_KEY is configured. All listed models natively support a

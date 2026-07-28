@@ -41,10 +41,7 @@ class ChapterEntry(BaseModel):
     chapter: int | None = None     # ordinal among chapter-kind entries
     interlude: int | None = None   # ordinal among interlude-kind entries
     order: float | None = None
-    pov: str | None = None
-    status: str | None = None
-    words_target: int | None = None
-    act: str | None = None  # explicit act assignment from chapter frontmatter
+    act: str | None = None
     scenes: list[SceneEntry] = []
     word_count: int = 0
 

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 import markdown
+import nh3
 import yaml
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
@@ -78,7 +79,16 @@ def _load_sessions(slug: str) -> list[dict[str, Any]]:
     if not path.exists():
         return []
     data = yaml.safe_load(path.read_text(encoding="utf-8"))
-    return data if isinstance(data, list) else []
+    if not isinstance(data, list):
+        return []
+    valid: list[dict[str, Any]] = []
+    for entry in data:
+        if not isinstance(entry, dict):
+            continue
+        if not all(k in entry for k in ("id", "token", "chapters")):
+            continue
+        valid.append(entry)
+    return valid
 
 
 def _save_sessions(slug: str, sessions: list[dict[str, Any]]) -> None:
@@ -229,7 +239,7 @@ def _render_manuscript(slug: str, chapter_dirs: list[str]) -> dict[str, Any]:
         for scene in ch.scenes:
             body = strip_scene_beats(scene.body)
             md_converter.reset()
-            html = md_converter.convert(body)
+            html = nh3.clean(md_converter.convert(body))
             scenes.append({
                 "path": scene.rel_path,
                 "title": scene.title,

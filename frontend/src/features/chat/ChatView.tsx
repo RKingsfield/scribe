@@ -237,7 +237,7 @@ export function ChatView() {
                 className="chat-history-del"
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (confirm('Delete this thread?')) removeThread(t.id);
+                  if (window.confirm('Delete this thread?')) removeThread(t.id);
                 }}
                 title="Delete"
               >

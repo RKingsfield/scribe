@@ -10,12 +10,12 @@ export function anchorFromSelection(root: HTMLElement, selection: Selection): Te
   return { prefix: before.slice(-30), exact, suffix: after.slice(0, 30) };
 }
 
-export interface AnchorMatch {
+interface AnchorMatch {
   start: number;
   end: number;
 }
 
-export function findAnchor(text: string, anchor: TextAnchor): AnchorMatch | null {
+function findAnchor(text: string, anchor: TextAnchor): AnchorMatch | null {
   const searchStr = anchor.prefix + anchor.exact + anchor.suffix;
   const idx = text.indexOf(searchStr);
   if (idx !== -1) {

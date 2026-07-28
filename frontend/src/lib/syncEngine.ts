@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ConflictMarker, cryptoRandomId, db, ensureOpen, fileKey, getDeviceId } from './db';
+import { cryptoRandomId, db, ensureOpen, fileKey, getDeviceId } from './db';
 import { countWords } from './words';
 import {
   addChapterToTree,
@@ -37,7 +37,7 @@ export const FLUSH_INTERVAL_MS = 30_000;
 const TREE_KEEPALIVE_MS = 60_000;
 export const SAVE_DEBOUNCE_MS = 800;
 
-export type SyncStatus = 'idle' | 'syncing' | 'offline' | 'conflict';
+type SyncStatus = 'idle' | 'syncing' | 'offline' | 'conflict';
 
 export interface SyncSnapshot {
   status: SyncStatus;
@@ -971,8 +971,6 @@ class SyncEngine {
 
 export const syncEngine = new SyncEngine();
 
-
-export type ConflictRow = ConflictMarker;
 
 export function useOnline(): boolean {
   const [online, setOnline] = useState(navigator.onLine);
