@@ -19,6 +19,22 @@ def test_path_escape_blocked(sample_project: Path) -> None:
         paths.resolve_in_project("example-novel", "chapters/../../escape.md")
 
 
+def test_dot_prefixed_component_blocked(sample_project: Path) -> None:
+    with pytest.raises(HTTPException) as exc:
+        paths.resolve_in_project("example-novel", ".git/config")
+    assert exc.value.status_code == 400
+    with pytest.raises(HTTPException):
+        paths.resolve_in_project("example-novel", "chapters/.hidden/01.md")
+
+
+def test_conflict_filename_still_resolves(sample_project: Path) -> None:
+    # conflict stems (<stem>.conflict.<device>.<ts>.md) are not dot-prefixed parts
+    p = paths.resolve_in_project(
+        "example-novel", "chapters/01_Chapter_01/01.conflict.dev1.20260101T000000Z.md"
+    )
+    assert p.parent.is_dir()
+
+
 def test_null_byte_path_blocked(sample_project: Path) -> None:
     with pytest.raises(HTTPException) as exc:
         paths.resolve_in_project("example-novel", "chapters/01_Chapter_01/01.md\x00.txt")

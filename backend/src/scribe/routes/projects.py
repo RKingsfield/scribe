@@ -1,15 +1,18 @@
+import logging
 from pathlib import Path
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..storage import frontmatter as fm
-from ..storage import paths
-from ..storage import structure
+from ..storage import paths, structure
 from ..storage.fs import write_text_atomic
-from ..storage.helpers import order_sort_key
+from ..storage.helpers import SLUG_RE, order_sort_key
 from ..storage.project import Act, Category, Project, load_project, save_project
 from ..storage.tree import read_chapter_entry, read_reference_entry
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/projects", tags=["projects"])
 
@@ -89,7 +92,8 @@ def get_projects() -> list[ProjectListItem]:
         try:
             p = load_project(root)
             items.append(ProjectListItem(slug=p.slug or slug, title=p.title))
-        except (OSError, ValueError):
+        except (OSError, ValueError, yaml.YAMLError) as e:
+            log.warning("Failed to load project %s: %s", slug, e)
             items.append(ProjectListItem(slug=slug, title=slug))
     return items
 
@@ -100,7 +104,7 @@ def get_project(slug: str) -> ProjectTree:
     p = load_project(root)
 
     chapter_dirs = structure.list_chapter_dirs(root)
-    chapters = [ChapterEntry(**read_chapter_entry(root, c)) for c in chapter_dirs]
+    chapters = [ChapterEntry.model_validate(read_chapter_entry(root, c)) for c in chapter_dirs]
     chapters.sort(key=lambda c: order_sort_key(c.order, c.slug))
 
     cat_data: list[CategoryData] = []
@@ -147,6 +151,9 @@ def put_project(slug: str, update: ProjectUpdate) -> Project:
 
 
 def _apply_act_renames(root: Path, old_acts: list[Act], new_acts: list[Act]) -> None:
+    if len(old_acts) != len(new_acts):
+        # Length change means add/remove, not a rename; positional pairing would misattribute renames.
+        return
     renames: dict[str, str] = {}
     for old, new in zip(old_acts, new_acts):
         if old.name != new.name:
@@ -158,7 +165,11 @@ def _apply_act_renames(root: Path, old_acts: list[Act], new_acts: list[Act]) -> 
         if not meta_path.is_file():
             continue
         text = meta_path.read_text(encoding="utf-8")
-        meta, body = fm.parse(text)
+        try:
+            meta, body = fm.parse(text)
+        except (ValueError, yaml.YAMLError) as e:
+            log.warning("Skipping act rename of %s: malformed frontmatter: %s", meta_path, e)
+            continue
         act_val = meta.get("act")
         if act_val in renames:
             meta["act"] = renames[act_val]
@@ -167,7 +178,7 @@ def _apply_act_renames(root: Path, old_acts: list[Act], new_acts: list[Act]) -> 
 
 @router.post("/{slug}/init", response_model=Project, status_code=201)
 def init_project(slug: str, init: ProjectUpdate) -> Project:
-    if "/" in slug or slug.startswith(".") or not slug:
+    if not SLUG_RE.match(slug):
         raise HTTPException(400, f"Invalid slug: {slug!r}")
     root = paths.writing_root() / slug
     if root.exists():
@@ -181,6 +192,7 @@ def init_project(slug: str, init: ProjectUpdate) -> Project:
         rag_recipe=init.rag_recipe,
         default_model=init.default_model or "local",
         acts=init.acts or [],
+        categories=init.categories,
     )
     for cat in p.resolved_categories:
         (root / cat.folder).mkdir(exist_ok=True)

@@ -20,3 +20,6 @@ tsconfig.tsbuildinfo
 # codebase-review working docs
 REVIEW.md
 REFACTOR-PLAN.md
+.claude/
+.superpowers/
+DEEP-REVIEW.md

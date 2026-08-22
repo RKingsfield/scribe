@@ -2,16 +2,21 @@ import { useCallback, useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useOnline } from '../../lib/syncEngine';
 import { Copy, Download, Plus, X } from 'lucide-react';
+import { toast } from '../../app/Toast';
 import { ProjectContext } from './ProjectView';
 import { ManuscriptReader } from '../review/ManuscriptReader';
 import {
   ReviewSession,
   createSession,
   deleteReviewSession,
-  exportReviewUrl,
+  exportSessionUrl,
   listSessions,
   updateSession,
 } from '../../lib/api';
+
+function isExpired(s: ReviewSession): boolean {
+  return s.expires !== null && new Date(s.expires).getTime() <= Date.now();
+}
 
 export function ReviewView() {
   const online = useOnline();
@@ -20,37 +25,70 @@ export function ReviewView() {
   const [activeSession, setActiveSession] = useState<ReviewSession | null>(null);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState('');
+  const [newExpiry, setNewExpiry] = useState('');
   const [selectedChapters, setSelectedChapters] = useState<string[]>([]);
   const [copied, setCopied] = useState(false);
 
   const refresh = useCallback(async () => {
-    const list = await listSessions(slug);
-    setSessions(list);
+    try {
+      const list = await listSessions(slug);
+      setSessions(list);
+    } catch {
+      toast('Failed to load review sessions', 'error');
+    }
   }, [slug]);
 
   useEffect(() => { refresh(); }, [refresh]);
 
   const handleCreate = async () => {
     if (!newName.trim() || selectedChapters.length === 0) return;
-    const session = await createSession(slug, { name: newName, chapters: selectedChapters });
-    setSessions((prev) => [...prev, session]);
-    setActiveSession(session);
-    setShowCreate(false);
-    setNewName('');
-    setSelectedChapters([]);
+    try {
+      const session = await createSession(slug, {
+        name: newName,
+        chapters: selectedChapters,
+        ...(newExpiry ? { expires: newExpiry } : {}),
+      });
+      setSessions((prev) => [...prev, session]);
+      setActiveSession(session);
+      setShowCreate(false);
+      setNewName('');
+      setNewExpiry('');
+      setSelectedChapters([]);
+    } catch {
+      toast('Failed to create review session', 'error');
+    }
+  };
+
+  const handleExpiryChange = async (id: string, expires: string) => {
+    if (!expires) return;
+    try {
+      const updated = await updateSession(slug, id, { expires });
+      setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
+      if (activeSession?.id === id) setActiveSession(updated);
+    } catch {
+      toast('Failed to update expiry', 'error');
+    }
   };
 
   const handleRevoke = async (id: string) => {
-    const updated = await updateSession(slug, id, { active: false });
-    setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
-    if (activeSession?.id === id) setActiveSession(updated);
+    try {
+      const updated = await updateSession(slug, id, { active: false });
+      setSessions((prev) => prev.map((s) => (s.id === id ? updated : s)));
+      if (activeSession?.id === id) setActiveSession(updated);
+    } catch {
+      toast('Failed to revoke session', 'error');
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (!window.confirm('Delete this review session and all its comments?')) return;
-    await deleteReviewSession(slug, id);
-    setSessions((prev) => prev.filter((s) => s.id !== id));
-    if (activeSession?.id === id) setActiveSession(null);
+    try {
+      await deleteReviewSession(slug, id);
+      setSessions((prev) => prev.filter((s) => s.id !== id));
+      if (activeSession?.id === id) setActiveSession(null);
+    } catch {
+      toast('Failed to delete session', 'error');
+    }
   };
 
   const copyLink = (token: string) => {
@@ -82,7 +120,7 @@ export function ReviewView() {
           <option value="" disabled>Select session…</option>
           {sessions.map((s) => (
             <option key={s.id} value={s.id}>
-              {s.name} {!s.active ? '(revoked)' : ''}
+              {s.name} {!s.active ? '(revoked)' : isExpired(s) ? '(expired)' : ''}
             </option>
           ))}
         </select>
@@ -91,12 +129,20 @@ export function ReviewView() {
         </button>
         {activeSession && (
           <>
-            <a href={exportReviewUrl(activeSession.token)} download className="ghost-btn">
+            <a href={exportSessionUrl(slug, activeSession.id)} download className="ghost-btn">
               <Download size={14} /> epub
             </a>
             <button className="ghost-btn" onClick={() => copyLink(activeSession.token)}>
               <Copy size={14} /> {copied ? 'Copied!' : 'Copy link'}
             </button>
+            <label className="dim review-expiry">
+              expires
+              <input
+                type="date"
+                value={activeSession.expires?.slice(0, 10) ?? ''}
+                onChange={(e) => handleExpiryChange(activeSession.id, e.target.value)}
+              />
+            </label>
             {activeSession.active && (
               <button className="ghost-btn" onClick={() => handleRevoke(activeSession.id)}>
                 Revoke
@@ -116,6 +162,15 @@ export function ReviewView() {
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
           />
+          <label className="dim review-expiry">
+            expires
+            <input
+              type="date"
+              value={newExpiry}
+              onChange={(e) => setNewExpiry(e.target.value)}
+            />
+            <span className="dim">blank = 6 months</span>
+          </label>
           <div className="review-chapter-picker">
             <div className="review-select-all">
               <button
@@ -160,6 +215,7 @@ export function ReviewView() {
           token={activeSession.token}
           isAuthor={true}
           reviewerName="Author"
+          ownerSession={{ slug, sessionId: activeSession.id }}
         />
       )}
 

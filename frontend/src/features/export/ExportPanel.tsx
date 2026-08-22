@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { X } from 'lucide-react';
 import { useOnline } from '../../lib/syncEngine';
+import { exportProject } from '../../lib/api';
 
 interface Props {
   slug: string;
@@ -41,24 +42,12 @@ export function ExportPanel({ slug, projectTitle, open, onClose }: Props) {
     setBusy(true);
     setError(null);
     try {
-      const params = new URLSearchParams({
-        format,
-        include_summaries: String(includeSummaries),
-        include_scene_beats: String(includeSceneBeats),
-        title_page: String(titlePage),
+      const { blob, filename } = await exportProject(slug, format, {
+        includeSummaries,
+        includeSceneBeats,
+        titlePage,
       });
-      const r = await fetch(
-        `/api/projects/${encodeURIComponent(slug)}/export?${params.toString()}`,
-      );
-      if (!r.ok) {
-        const txt = await r.text().catch(() => '');
-        throw new Error(`${r.status} ${r.statusText}: ${txt}`);
-      }
-      const blob = await r.blob();
       const url = URL.createObjectURL(blob);
-      const cd = r.headers.get('content-disposition') || '';
-      const m = cd.match(/filename="([^"]+)"/);
-      const filename = m?.[1] ?? `${slug}.${format}`;
       const a = document.createElement('a');
       a.href = url;
       a.download = filename;

@@ -4,25 +4,34 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any, Literal, cast
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
 
 from .. import config
 from ..chat.anthropic import (
+    OpenAIChatBody,
     complete_anthropic,
     is_claude_model,
     stream_anthropic,
     strip_think_blocks,
     synthetic_models,
 )
-from ..chat.context import ScopeBundle, ScopeRequest, build_bundle, build_codex, render_system_prompt
+from ..chat.context import (
+    ScopeBundle,
+    ScopeRequest,
+    build_bundle,
+    build_codex,
+    render_system_prompt,
+)
 from ..storage import frontmatter as fm
-from ..storage.project import load_project
 from ..storage import paths
+from ..storage.project import load_project
 
 log = logging.getLogger(__name__)
 
@@ -32,7 +41,7 @@ models_router = APIRouter(prefix="/api", tags=["chat"])
 
 
 class ChatMessage(BaseModel):
-    role: str  # 'user' | 'assistant' | 'system'
+    role: Literal["user", "assistant", "system"]
     content: str
 
 
@@ -71,25 +80,27 @@ async def _stream_orchestrator(
     """Shared SSE generator for orchestrator (and Claude) streaming routes."""
     yield f"event: meta\ndata: {json.dumps(meta_event)}\n\n".encode()
     if use_claude:
-        async for chunk in stream_anthropic(body):
+        async for chunk in stream_anthropic(cast(OpenAIChatBody, body)):
             yield chunk
         return
     try:
-        async with httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client:
-            async with client.stream("POST", url, json=body) as resp:
-                if resp.status_code >= 400:
-                    err_text = await resp.aread()
-                    err = {
-                        "status": resp.status_code,
-                        "body": err_text.decode("utf-8", errors="replace")[:2000],
-                    }
-                    yield f"event: error\ndata: {json.dumps(err)}\n\n".encode()
-                    return
-                async for line in resp.aiter_lines():
-                    if not line:
-                        yield b"\n"
-                        continue
-                    yield (line + "\n").encode()
+        async with (
+            httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client,
+            client.stream("POST", url, json=body) as resp,
+        ):
+            if resp.status_code >= 400:
+                err_text = await resp.aread()
+                err = {
+                    "status": resp.status_code,
+                    "body": err_text.decode("utf-8", errors="replace")[:2000],
+                }
+                yield f"event: error\ndata: {json.dumps(err)}\n\n".encode()
+                return
+            async for line in resp.aiter_lines():
+                if not line:
+                    yield b"\n"
+                    continue
+                yield (line + "\n").encode()
     except httpx.HTTPError as e:
         log.exception("orchestrator stream failed")
         err = {"status": 502, "body": f"orchestrator unreachable: {e}"}
@@ -101,7 +112,7 @@ def scope_preview(slug: str, req: ChatRequest) -> ScopePreviewResponse:
     """Dry-run: return the size of the scope so the UI can show a token badge."""
     try:
         bundle = build_bundle(slug, req.scope, req.include_codex)
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
     return ScopePreviewResponse(
         label=bundle.label,
@@ -112,7 +123,7 @@ def scope_preview(slug: str, req: ChatRequest) -> ScopePreviewResponse:
     )
 
 
-def _build_payload(slug: str, req: ChatRequest) -> tuple[dict[str, Any], ScopeBundle]:
+def _build_payload(slug: str, req: ChatRequest) -> tuple[OpenAIChatBody, ScopeBundle]:
     project_root = paths.project_root(slug)
     project = load_project(project_root)
     bundle = build_bundle(slug, req.scope, req.include_codex)
@@ -128,15 +139,15 @@ def _build_payload(slug: str, req: ChatRequest) -> tuple[dict[str, Any], ScopeBu
         body["temperature"] = req.temperature
     if req.max_tokens is not None:
         body["max_tokens"] = req.max_tokens
-    return body, bundle
+    return cast(OpenAIChatBody, body), bundle
 
 
 @router.post("/stream")
 async def stream_chat(slug: str, req: ChatRequest) -> StreamingResponse:
     """Forward to orchestrator (or Anthropic) with stream=true and relay SSE."""
     try:
-        body, bundle = _build_payload(slug, req)
-    except ValueError as e:
+        body, bundle = await run_in_threadpool(_build_payload, slug, req)
+    except (ValueError, OSError) as e:
         raise HTTPException(400, str(e))
 
     use_claude = is_claude_model(body.get("model"))
@@ -151,7 +162,7 @@ async def stream_chat(slug: str, req: ChatRequest) -> StreamingResponse:
     }
 
     return StreamingResponse(
-        _stream_orchestrator(url, body, meta, use_claude=use_claude),
+        _stream_orchestrator(url, cast(dict[str, Any], body), meta, use_claude=use_claude),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
@@ -160,16 +171,18 @@ async def stream_chat(slug: str, req: ChatRequest) -> StreamingResponse:
     )
 
 
-def _build_rewrite_payload(slug: str, req: RewriteRequest) -> dict[str, Any]:
+def _build_rewrite_payload(slug: str, req: RewriteRequest) -> OpenAIChatBody:
     project_root = paths.project_root(slug)
     project = load_project(project_root)
     parts: list[str] = [
-        f"You are scribe, a writing assistant rewriting a passage from "
-        f"\"{project.title}\". Match the existing voice exactly: same tense, "
-        f"same point of view, same register and rhythm. Preserve all proper "
-        f"nouns. Keep paragraph structure unless the instruction asks "
-        f"otherwise. Reply with ONLY the rewritten passage. No preamble. No "
-        f"markdown fences. No explanation.",
+        (
+            f"You are scribe, a writing assistant rewriting a passage from "
+            f"\"{project.title}\". Match the existing voice exactly: same tense, "
+            f"same point of view, same register and rhythm. Preserve all proper "
+            f"nouns. Keep paragraph structure unless the instruction asks "
+            f"otherwise. Reply with ONLY the rewritten passage. No preamble. No "
+            f"markdown fences. No explanation."
+        ),
     ]
     if req.include_codex:
         codex = build_codex(project_root)
@@ -208,7 +221,7 @@ def _build_rewrite_payload(slug: str, req: RewriteRequest) -> dict[str, Any]:
         body["temperature"] = req.temperature
     if req.max_tokens is not None:
         body["max_tokens"] = req.max_tokens
-    return body
+    return cast(OpenAIChatBody, body)
 
 
 @router.post("/rewrite")
@@ -219,7 +232,10 @@ async def stream_rewrite(slug: str, req: RewriteRequest) -> StreamingResponse:
     if not req.instruction.strip():
         raise HTTPException(400, "instruction is empty")
 
-    body = _build_rewrite_payload(slug, req)
+    try:
+        body = await run_in_threadpool(_build_rewrite_payload, slug, req)
+    except (ValueError, OSError) as e:
+        raise HTTPException(400, str(e))
     use_claude = is_claude_model(body.get("model"))
     if use_claude and not config.ANTHROPIC_API_KEY:
         raise HTTPException(503, "ANTHROPIC_API_KEY not configured")
@@ -232,7 +248,7 @@ async def stream_rewrite(slug: str, req: RewriteRequest) -> StreamingResponse:
     }
 
     return StreamingResponse(
-        _stream_orchestrator(url, body, meta, use_claude=use_claude),
+        _stream_orchestrator(url, cast(dict[str, Any], body), meta, use_claude=use_claude),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache, no-transform",
@@ -260,9 +276,7 @@ SUMMARY_SYSTEM_PROMPT = (
 )
 
 
-@router.post("/summarize", response_model=SummarizeResponse)
-async def summarize(slug: str, req: SummarizeRequest) -> SummarizeResponse:
-    """One-shot, non-streaming summary of a scene/chapter file body."""
+def _build_summarize_payload(slug: str, req: SummarizeRequest) -> OpenAIChatBody:
     abs_path = paths.resolve_in_project(slug, req.path)
     if not abs_path.is_file():
         raise HTTPException(404, f"File not found: {req.path}")
@@ -274,16 +288,26 @@ async def summarize(slug: str, req: SummarizeRequest) -> SummarizeResponse:
     project = load_project(paths.project_root(slug))
     model = req.model or project.default_model or "auto-router"
 
-    payload: dict[str, Any] = {
-        "model": model,
-        "messages": [
-            {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
-            {"role": "user", "content": body.strip()},
-        ],
-        "stream": False,
-        "max_tokens": config.SUMMARIZE_MAX_TOKENS,
-        "temperature": config.SUMMARIZE_TEMPERATURE,
-    }
+    return cast(
+        OpenAIChatBody,
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": SUMMARY_SYSTEM_PROMPT},
+                {"role": "user", "content": body.strip()},
+            ],
+            "stream": False,
+            "max_tokens": config.SUMMARIZE_MAX_TOKENS,
+            "temperature": config.SUMMARIZE_TEMPERATURE,
+        },
+    )
+
+
+@router.post("/summarize", response_model=SummarizeResponse)
+async def summarize(slug: str, req: SummarizeRequest) -> SummarizeResponse:
+    """One-shot, non-streaming summary of a scene/chapter file body."""
+    payload = await run_in_threadpool(_build_summarize_payload, slug, req)
+    model = payload["model"]
 
     use_claude = is_claude_model(model)
     if use_claude and not config.ANTHROPIC_API_KEY:
@@ -321,7 +345,7 @@ class ModelEntry(BaseModel):
 
 
 @models_router.get("/models", response_model=list[ModelEntry])
-async def list_models() -> JSONResponse:
+async def list_models() -> list[ModelEntry]:
     """Proxy /v1/models and append synthetic Claude entries when configured."""
     url = f"{config.ORCHESTRATOR_URL.rstrip('/')}/v1/models"
     cleaned: list[dict[str, Any]] = []
@@ -347,4 +371,4 @@ async def list_models() -> JSONResponse:
             )
     cleaned = [c for c in cleaned if c["id"]]
     cleaned.extend(synthetic_models())
-    return JSONResponse(cleaned)
+    return [ModelEntry(**c) for c in cleaned]

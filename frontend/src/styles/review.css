@@ -56,6 +56,16 @@
   gap: 0.5rem;
   justify-content: flex-end;
 }
+.review-expiry {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: var(--text-xs);
+}
+.review-expiry input[type='date'] {
+  padding: 0.2rem 0.4rem;
+  font-size: var(--text-sm);
+}
 
 /* shared manuscript + comment layout */
 .review-layout {

@@ -67,11 +67,13 @@ git/             # Git wrapper + autocommit scheduler
 | `helpers.py` | `slugify`, `classify_chapter_kind`, `slug_position`, `order_sort_key` |
 | `manifest.py` | Recursive walk for sync |
 | `structure.py` | `list_chapter_dirs`, `list_scenes` |
+| `tree.py` | `read_chapter_entry`, `read_reference_entry`, `read_chapter_scenes` (shared single-pass scene reader used by chat and export) |
+| `review.py` | Session + comment YAML CRUD with threading lock, `resolve_token` (scans projects for a review token) |
 
 ### Chat layer
 
-- `context.py` -- `ScopeRequest` (Pydantic), `build_bundle(slug, scope, include_codex)` reads files for the requested scope, `render_system_prompt(title, bundle)` formats the system message. Bundle exposes `estimated_tokens = char_count // 4` for UI hint.
-- `anthropic.py` -- `convert_messages` splits OpenAI-style messages into Anthropic's `(system, messages)` shape, `stream_anthropic` streams and re-emits in OpenAI SSE format, `ThinkBlockFilter` suppresses `<think>` blocks across chunk boundaries, `strip_think_blocks` regex for non-streaming.
+- `context.py`: `ScopeRequest` (Pydantic), `build_bundle(slug, scope, include_codex)` reads files for the requested scope, `render_system_prompt(title, bundle)` formats the system message. Bundle exposes `estimated_tokens = char_count // 4` for UI hint.
+- `anthropic.py`: `convert_messages` splits OpenAI-style messages into Anthropic's `(system, messages)` shape, `stream_anthropic` streams and re-emits in OpenAI SSE (server-sent events) format, `ThinkBlockFilter` suppresses `<think>` blocks across chunk boundaries and flushes any held tail at stream end, `strip_think_blocks` regex for non-streaming.
 
 ### Export layer
 
@@ -79,14 +81,14 @@ git/             # Git wrapper + autocommit scheduler
 
 ### Git layer
 
-Git wrapper with a `BackgroundScheduler` for periodic autocommit + push.
+Git wrapper with a `BackgroundScheduler` for periodic autocommit + push. On failure, posts to a configurable webhook (`ALERT_WEBHOOK_URL`), throttled to one alert per project per hour. Supports ntfy-style and generic JSON webhook styles (see DESIGN.md #17).
 
 ## API
 
 | Area | Endpoints | Notes |
 |------|-----------|-------|
-| Projects | `GET /api/projects`, `GET/PUT /api/projects/{slug}`, `POST /api/projects/{slug}/init` | Full nested tree with chapters, scenes, categories |
-| Files | `GET/PUT/DELETE /api/projects/{slug}/file?path=`, `POST /file/move` | ETag concurrency; conflict-on-mismatch with `X-On-Conflict: save-as-conflict` |
+| Projects | `GET /api/projects`, `GET/PUT /api/projects/{slug}`, `POST /api/projects/{slug}/init` | Full nested tree with chapters, scenes, categories. PUT merges non-null fields only — a field can't be cleared to null |
+| Files | `GET/PUT/DELETE /api/projects/{slug}/file?path=` | ETag concurrency; conflict-on-mismatch with `X-On-Conflict: save-as-conflict`. PUT with no `If-Match` on an existing file overwrites unconditionally — the sync engine's cold-cache save path relies on this. DELETE takes an optional `If-Match` (412 on mismatch) so a replayed offline delete can't destroy a newer edit |
 | Structure | `POST /chapter/new`, `POST /chapter/{slug}/scene/new`, `DELETE /chapter/{slug}`, `POST /reorder`, `POST /scene/move`, `POST /character/new`, `POST /reference/new`, `POST /category/{folder}/new` | Auto-computes slugs/ordinals; scene/move is atomic cross-chapter |
 | Sync | `GET /sync` (manifest with sha256+mtime per file), `GET/DELETE /conflicts` | Conflict files are plaintext |
 | Git | `POST /git/commit` | Manual trigger; autocommit runs in background |
@@ -94,7 +96,7 @@ Git wrapper with a `BackgroundScheduler` for periodic autocommit + push.
 | Models | `GET /api/models` | Proxies upstream + synthetic Claude entries when API key set |
 | RAG | `GET/PUT/DELETE /rag/*`, `POST /rag/query` | Recipe on disk; ingest is external |
 | Export | `GET /export?format=md\|docx\|html\|epub` | Composes manuscript, pipes to pandoc for non-md |
-| Review | `GET/POST/PATCH/DELETE /review/sessions`, public `/review/t/{token}/*` | Token-gated beta reader access, sidecar comment storage |
+| Review | `GET/POST/PATCH/DELETE /review/sessions`, owner `/review/sessions/{id}/{manuscript,comments,export}` (+ `POST .../comments`), public `/api/review/{token}/*` | Token-gated beta reader access. Sessions expire (`REVIEW_SESSION_TTL_DAYS`, default 180; per-session override via PATCH). Comment updates are session-scoped. Owner endpoints work on revoked/expired sessions. Session delete cascades comment cleanup across all chapter dirs, not just the session's current `chapters`. Sessions in APPDATA_ROOT, comments in novel dir |
 
 ## Frontend
 
@@ -104,20 +106,26 @@ React 18 + Vite + TypeScript + CodeMirror 6 + Dexie + cmdk.
 src/
   app/                 # App.tsx (router), CommandPalette (cmdk), StatusBar, Toast
   features/
-    project/           # ProjectView (shell), WriteView (3-pane), ChapterFlow, PlanBoard (+ OutlineBoard, StatusBoard), Inspector, ReviewView
+    project/           # ProjectView (shell), WriteView (3-pane), ChapterFlow, SceneBlock, PlanBoard (+ OutlineBoard, OutlineCard, OutlineSceneRow, StatusBoard), Inspector, ReviewView
+    projects/          # ProjectPicker (project selection screen)
     sidebar/           # Sidebar (orchestrator), ChapterCard, RefList -- act-grouped chapters, drag-reorderable, dynamic categories
     editor/            # Editor.tsx (CM6), codexLink, liveMarkdown, typewriter, detectKind
     chat/              # ChatView, ScopePicker, ChatThread, streaming.ts, threads.ts
-    rewrite/           # RewriteDialog, diff.ts (word-level LCS)
+    rewrite/           # RewriteDialog
     rag/               # RagPanel
     export/            # ExportPanel
     review/            # ManuscriptReader, CommentRail, BetaReaderView, anchoring.ts
-    sync/              # ConflictsBanner
+    sync/              # ConflictsBanner (two/three-column merge UI), StuckOpsBanner (parked ops + writes: retry all / per-item discard)
   lib/
-    api.ts             # fetch wrappers
-    syncEngine.ts      # singleton -- all data flow
+    api/               # fetch wrappers, split by domain (common, projects, chat, review, rag) behind an index.ts barrel
+    diff.ts            # word-level LCS diff + merge zones (used by rewrite + conflicts)
+    syncEngine.ts      # re-exports from sync/ (existing imports still work)
+    sync/              # core, structure, structureFlush, tree, prefetch, hooks
     db.ts              # Dexie schema
+    types.ts           # SceneFrontmatter, ChapterFrontmatter, structure op payloads
+    useFileEditor.ts   # shared file-load + debounced-save hook
     offlineTree.ts     # Pure functions for local tree mutation
+    format.ts          # relativeTime helper
 ```
 
 ### Routes
@@ -134,7 +142,7 @@ src/
 
 ### State management
 
-No Redux/Zustand. React state + `localStorage` for persistence (theme, typewriter mode, sidebar/inspector collapse, plan mode, helper model, tag filters). `syncEngine` is a singleton class with listeners, not a React context -- keeps sync logic out of the React render cycle.
+No Redux/Zustand. React state + `localStorage` for persistence (theme, typewriter mode, sidebar/inspector collapse, plan mode, helper model, tag filters). `syncEngine` is a singleton class with listeners, not a React context, which keeps sync logic out of the React render cycle.
 
 ### Editor
 
@@ -188,13 +196,15 @@ flush()
 
 Reads are cache-first: `getFile`, `getTree`, `listProjects` return from IndexedDB immediately when cached, then background-refresh from the network. Writes are local-first: `saveFile` writes to cache + pending queue before attempting the network call. Pending writes are coalesced per (slug, path) so fast typing doesn't pile up stale states.
 
-The cache's `serverEtag` is authoritative; the caller's `baseEtag` is only used on cold cache (see DESIGN.md #6 for the bug that taught us this).
+The cache's `serverEtag` is authoritative. The caller's `baseEtag` is only used on cold cache (see DESIGN.md #6 for the bug that taught us this).
 
-Create chapter, create scene, and reorder all work offline via queued operations + local tree patching (`offlineTree.ts`). On reconnect: flush structure ops (with temp-to-real path remapping), flush pending writes, then tree refresh. `navigator.onLine` is a fast-path hint but not relied on for correctness.
+Create chapter, create scene, delete (chapter, scene, category entry), reorder, and move all work offline via queued operations + local tree patching (`offlineTree.ts`). On reconnect: flush structure ops (with temp-to-real path remapping), flush pending writes, then tree refresh. `navigator.onLine` is a fast-path hint but not relied on for correctness.
+
+Both queues classify failures the same way, via `isTransientError` in `lib/api/common.ts`: a fetch-level `TypeError`, an HTTP 5xx, or a 429 is transient, so the item keeps its place and the loop stops until the next flush. Anything else is permanent — the item is stamped `stuckAt` and the queue drains past it. Parked items count toward neither `syncing` nor `offline`, surface in `StuckOpsBanner` (structure ops by kind, pending writes as "file write" against their path), and show in the status bar as "N stuck". A conflict result from `PUT /file` is not a failure at all; it takes the conflict path above.
 
 ## PWA / service worker
 
-Precaches the full app shell from the build-time asset manifest. Hashed assets are cache-first; navigation is network-first with an index.html fallback. API requests are not intercepted -- letting them fail naturally means the sync engine's IDB cache handles offline reads and writes without the SW getting in the way.
+Precaches the full app shell from the build-time asset manifest. Hashed assets are cache-first. Navigation is network-first with an index.html fallback. API requests are not intercepted: letting them fail naturally means the sync engine's IDB cache handles offline reads and writes without the SW getting in the way.
 
 Offline workflow: prefetch all project files into IndexedDB, go offline, read/edit/create via cached tree + pending queue, come online, auto-sync. Features that need the network (chat, rewrite, RAG, export, review) show a "requires internet" guard when offline.
 
@@ -216,10 +226,10 @@ CI workflow
 Live
 ```
 
-Multi-stage Dockerfile: frontend build stage, then backend runtime stage. A dedicated test stage runs pytest inside the build -- the build fails if any test fails.
+Multi-stage Dockerfile: frontend build stage, then backend runtime stage. A dedicated test stage runs pytest inside the build. The build fails if any test fails.
 
 ## Testing
 
 Backend tests (pytest) cover storage, routes, structure ops, chat/streaming/Anthropic translation, sync integration, RAG, export, and review. Tests use `tmp_path`-based project trees, no filesystem mocking.
 
-Frontend tests (vitest + fake-indexeddb) cover `offlineTree.ts` pure tree mutations, `syncEngine.ts` flush logic (etag authority, coalescing, conflict recording), and `sceneDrag.ts` move resolution.
+Frontend tests (vitest + jsdom + fake-indexeddb + @testing-library/react) cover: pure-logic modules (`offlineTree.ts` tree mutations, `syncEngine.ts` flush logic, `sceneDrag.ts` move resolution, `chapterDrag.ts`, `streaming.ts`, `diff.ts`, `codexLink.ts` detection, `format.ts`, `words.ts`, `detectKind.ts`, `anchoring.ts`, `liveMarkdown.ts` decoration pipeline), and component tests (Sidebar, PlanBoard/OutlineBoard, ChapterFlow, WriteView, ConflictsBanner merge workflow, ChatView streaming + thread management).

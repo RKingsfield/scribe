@@ -1,10 +1,13 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, afterEach } from 'vitest';
 import type { ProjectTree, ChapterEntry, SceneEntry } from '../api';
+import { deleteFile } from '../api';
 import {
   addChapterToTree,
   addSceneToTree,
   addCategoryEntryToTree,
   removeChapterFromTree,
+  removeSceneFromTree,
+  removeCategoryEntryFromTree,
   applyReorderToTree,
   remapTempPaths,
   isOfflinePath,
@@ -188,6 +191,64 @@ describe('removeChapterFromTree', () => {
     const tree = makeTree();
     const t = removeChapterFromTree(tree, 'nope');
     expect(t.chapters).toHaveLength(1);
+  });
+});
+
+describe('removeSceneFromTree', () => {
+  it('removes a scene by path, leaving other chapters intact', () => {
+    const tree = makeTwoChapterTree();
+    const t = removeSceneFromTree(tree, 'chapters/01_Chapter_01/01.md');
+    expect(t.chapters[0].scenes.map(s => s.path)).toEqual(['chapters/01_Chapter_01/02.md']);
+    expect(t.chapters[1].scenes).toHaveLength(1);
+  });
+
+  it('is a no-op for an unknown scene path', () => {
+    const tree = makeTwoChapterTree();
+    const t = removeSceneFromTree(tree, 'chapters/01_Chapter_01/99.md');
+    expect(t.chapters[0].scenes).toHaveLength(2);
+  });
+});
+
+describe('removeCategoryEntryFromTree', () => {
+  it('removes an entry by path', () => {
+    const tree = makeTree();
+    const t = removeCategoryEntryFromTree(tree, 'characters/asha.md');
+    expect(t.categories[0].entries).toHaveLength(0);
+  });
+
+  it('is a no-op for an unknown entry path', () => {
+    const tree = makeTree();
+    const t = removeCategoryEntryFromTree(tree, 'characters/nope.md');
+    expect(t.categories[0].entries).toHaveLength(1);
+  });
+});
+
+describe('deleteFile idempotent replay', () => {
+  const originalFetch = globalThis.fetch;
+  afterEach(() => { globalThis.fetch = originalFetch; });
+
+  function stubFetch(status: number, statusText: string) {
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: status >= 200 && status < 300,
+      status,
+      statusText,
+      text: async () => '',
+    } as Response) as unknown as typeof fetch;
+  }
+
+  it('tolerate404 swallows a 404 as success', async () => {
+    stubFetch(404, 'Not Found');
+    await expect(deleteFile('proj', 'p.md', { tolerate404: true })).resolves.toBeUndefined();
+  });
+
+  it('throws on a 404 without tolerate404', async () => {
+    stubFetch(404, 'Not Found');
+    await expect(deleteFile('proj', 'p.md')).rejects.toThrow('404');
+  });
+
+  it('still throws on non-404 errors even with tolerate404', async () => {
+    stubFetch(500, 'Internal Server Error');
+    await expect(deleteFile('proj', 'p.md', { tolerate404: true })).rejects.toThrow('500');
   });
 });
 

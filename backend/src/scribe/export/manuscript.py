@@ -10,7 +10,8 @@ from typing import Any
 from ..storage import frontmatter as fm
 from ..storage import paths, structure
 from ..storage.helpers import coerce_order, order_sort_key
-
+from ..storage.project import load_project
+from ..storage.tree import read_chapter_scenes
 
 SCENE_BEAT_RE = re.compile(r"\[\[(.*?)\]\]", re.DOTALL)
 
@@ -56,7 +57,7 @@ def walk_chapters(
     entries: list[tuple[float | None, structure.ChapterDir, dict[str, Any], str]] = []
     for ch in chapter_dirs:
         meta_text = (project_root / ch.meta_rel_path).read_text(encoding="utf-8")
-        meta, body = fm.parse(meta_text)
+        meta, body = fm.parse_lenient(meta_text)
         entries.append((coerce_order(meta.get("order")), ch, meta, body))
     entries.sort(key=lambda t: order_sort_key(t[0], t[1].slug))
 
@@ -70,15 +71,7 @@ def walk_chapters(
             body=ch_body,
             scenes=[],
         )
-        scenes = structure.list_scenes(project_root, ch.slug)
-        scene_entries: list[tuple[float | None, str, dict[str, Any], str]] = []
-        for s in scenes:
-            text = (project_root / s.rel_path).read_text(encoding="utf-8")
-            meta, body = fm.parse(text)
-            scene_entries.append((coerce_order(meta.get("order")), s.rel_path, meta, body))
-        scene_entries.sort(key=lambda t: order_sort_key(t[0], t[1]))
-
-        for _, rel_path, s_meta, s_body in scene_entries:
+        for _, rel_path, s_meta, s_body in read_chapter_scenes(project_root, ch.slug):
             chapter.scenes.append(SceneData(
                 rel_path=rel_path,
                 title=str(s_meta.get("title", "")),
@@ -95,8 +88,6 @@ def compose_manuscript(slug: str, options: ExportOptions | None = None, chapter_
     chapter_filter: if set, only include chapters whose rel_path is in this set.
     """
     opts = options or ExportOptions()
-    from ..storage.project import load_project
-
     project_root = paths.project_root(slug)
     project = load_project(project_root)
 

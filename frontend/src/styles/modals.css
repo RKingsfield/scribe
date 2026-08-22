@@ -5,7 +5,7 @@
 .modal-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--scrim);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -113,6 +113,42 @@
 }
 .conflicts-banner button { margin-left: auto; }
 
+.stuck-ops-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  background: var(--danger-soft);
+  border-bottom: 1px solid color-mix(in oklab, var(--danger), transparent 55%);
+  padding: 0.45rem 1rem;
+  font-size: var(--text-sm);
+}
+.stuck-ops-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+.stuck-ops-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+.stuck-op-kind {
+  font-family: var(--font-mono);
+  color: var(--fg-dim);
+}
+.stuck-op-target { font-weight: 600; }
+.stuck-op-error {
+  color: var(--fg-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+.stuck-ops-list button { margin-left: 0; }
+
 .conflicts-modal {
   width: min(960px, 96vw);
   max-height: 90vh;
@@ -173,6 +209,9 @@
   flex: 1;
   overflow: hidden;
 }
+.diff-cols-3 {
+  grid-template-columns: 1fr 1fr 1fr;
+}
 .diff-col {
   display: flex;
   flex-direction: column;
@@ -226,6 +265,98 @@
   text-align: left;
 }
 
+/* diff navigation */
+.diff-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-sm);
+  color: var(--fg-mid);
+}
+.diff-nav-count {
+  font-weight: 500;
+}
+.diff-nav-arrows {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.diff-nav-arrows button {
+  display: flex;
+  align-items: center;
+  padding: 0.15rem;
+  border-radius: var(--radius-sm);
+  color: var(--fg-mid);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+.diff-nav-arrows button:hover {
+  background: var(--surface-3);
+  color: var(--fg);
+}
+.diff-nav-pos {
+  min-width: 3.5em;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+}
+
+/* inline diff highlights */
+.diff-body {
+  margin: 0;
+  padding: 0.6rem;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: var(--font-body);
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  flex: 1;
+  background: var(--surface);
+}
+.diff-hl {
+  border-radius: 2px;
+  padding: 0 1px;
+  cursor: pointer;
+}
+.diff-hl-del {
+  background: color-mix(in oklab, var(--danger), transparent 78%);
+}
+.diff-hl-add {
+  background: color-mix(in oklab, var(--success), transparent 78%);
+}
+.diff-hl-editor {
+  background: color-mix(in oklab, var(--accent), transparent 80%);
+}
+.diff-hl.zone-picked {
+  box-shadow: 0 2px 0 var(--accent);
+}
+.diff-hl.zone-current {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 3px;
+}
+
+/* frontmatter pick */
+.fm-diff td.fm-pick {
+  cursor: pointer;
+  position: relative;
+  padding-left: 1.4rem;
+}
+.fm-diff td.fm-pick:hover {
+  background: var(--surface-3);
+}
+.fm-diff td.fm-picked {
+  background: var(--accent-soft);
+}
+.fm-check {
+  position: absolute;
+  left: 0.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--accent);
+}
+
 
 /* ============================================================
    rewrite dialog
@@ -234,7 +365,7 @@
 .rewrite-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--scrim);
   z-index: 80;
   display: flex;
   align-items: center;
@@ -394,13 +525,13 @@
   color: var(--fg-mid);
 }
 .rewrite-diff .diff-add {
-  background: rgba(110, 194, 122, 0.18);
+  background: color-mix(in oklab, var(--success), transparent 82%);
   color: var(--fg);
   border-radius: 2px;
   padding: 0 1px;
 }
 .rewrite-diff .diff-del {
-  background: rgba(214, 115, 115, 0.18);
+  background: color-mix(in oklab, var(--danger), transparent 82%);
   color: var(--fg-mid);
   text-decoration: line-through;
   text-decoration-color: var(--danger);
@@ -444,7 +575,7 @@
 .panel-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.45);
+  background: var(--scrim);
   z-index: 80;
   display: flex;
   align-items: center;

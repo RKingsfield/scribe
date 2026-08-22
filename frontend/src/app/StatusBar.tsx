@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { relativeTime } from '../lib/format';
 import { syncEngine, SyncSnapshot } from '../lib/syncEngine';
 
 interface Props {
@@ -8,7 +9,7 @@ interface Props {
   activePath: string | null;
   activeTitle: string | null;
   liveWordCount: number;
-  saveState: 'clean' | 'dirty' | 'saving' | 'saved' | 'error';
+  saveState: 'clean' | 'dirty' | 'saving' | 'saved' | 'error' | 'blocked';
   onOpenPalette: () => void;
 }
 
@@ -24,17 +25,26 @@ export function StatusBar({
   const [snap, setSnap] = useState<SyncSnapshot>(syncEngine.getSnapshot());
   useEffect(() => syncEngine.subscribe(setSnap), []);
   const navigate = useNavigate();
+  const activeStructureOps = snap.structureOpsCount - snap.stuckOpsCount;
+  const activePending = snap.pendingCount - snap.stuckPendingCount;
+  const stuckCount = snap.stuckOpsCount + snap.stuckPendingCount;
   const syncBadge = (() => {
     if (snap.status === 'conflict')
       return { className: 'sb-status conflict', label: `${snap.conflictCount} conflict${snap.conflictCount === 1 ? '' : 's'}` };
     if (snap.status === 'offline') {
       const parts: string[] = ['offline'];
-      if (snap.pendingCount > 0) parts.push(`${snap.pendingCount} edits`);
-      if (snap.structureOpsCount > 0) parts.push(`${snap.structureOpsCount} creates`);
+      if (activePending > 0) parts.push(`${activePending} edits`);
+      if (activeStructureOps > 0) parts.push(`${activeStructureOps} creates`);
+      if (stuckCount > 0) parts.push(`${stuckCount} stuck`);
       return { className: 'sb-status offline', label: parts.join(' · ') };
     }
-    if (snap.status === 'syncing')
-      return { className: 'sb-status saving', label: snap.pendingCount > 0 ? `syncing ${snap.pendingCount}` : 'syncing' };
+    if (snap.status === 'syncing') {
+      const parts: string[] = [activePending > 0 ? `syncing ${activePending}` : 'syncing'];
+      if (stuckCount > 0) parts.push(`${stuckCount} stuck`);
+      return { className: 'sb-status saving', label: parts.join(' · ') };
+    }
+    if (stuckCount > 0)
+      return { className: 'sb-status offline', label: `${stuckCount} stuck` };
     if (snap.lastFlushAt) {
       const ago = relativeTime(snap.lastFlushAt);
       return { className: 'sb-status ok', label: `synced ${ago}` };
@@ -43,6 +53,7 @@ export function StatusBar({
   })();
 
   const saveBadge = (() => {
+    if (saveState === 'blocked') return { className: 'sb-status offline', label: 'conflict — resolve to save' };
     if (saveState === 'error') return { className: 'sb-status offline', label: 'save failed' };
     if (saveState === 'saving') return { className: 'sb-status saving', label: 'saving…' };
     if (saveState === 'dirty') return { className: 'sb-status dirty', label: '● unsaved' };
@@ -86,10 +97,3 @@ export function StatusBar({
   );
 }
 
-function relativeTime(ts: number): string {
-  const diff = Math.floor((Date.now() - ts) / 1000);
-  if (diff < 60) return 'just now';
-  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
-  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
-  return `${Math.floor(diff / 86400)}d ago`;
-}

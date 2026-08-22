@@ -1,0 +1,22 @@
+# Copy to docker-compose.yml and adjust paths. Config via .env — see .env.example.
+services:
+  scribe:
+    build: .
+    image: scribe
+    container_name: scribe
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    env_file: .env
+    volumes:
+      - /path/to/writing:/data/writing
+      - /path/to/appdata:/data/appdata
+      # Only needed for RAG recipe generation
+      #- /path/to/rag:/data/rag
+    healthcheck:
+      # python-slim image has no curl
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:3030', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s

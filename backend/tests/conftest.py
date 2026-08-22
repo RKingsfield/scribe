@@ -2,13 +2,22 @@ import os
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 os.environ.setdefault("SCRIBE_AUTOCOMMIT_DISABLED", "1")
+
+from scribe.main import app
+
+
+@pytest.fixture
+def client() -> TestClient:
+    return TestClient(app)
 
 
 @pytest.fixture
 def writing_root(monkeypatch, tmp_path: Path) -> Path:
     monkeypatch.setattr("scribe.config.WRITING_ROOT", tmp_path)
+    monkeypatch.setattr("scribe.config.APPDATA_ROOT", tmp_path / "_appdata")
     return tmp_path
 
 

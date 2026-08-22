@@ -12,7 +12,7 @@ SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 ORDER_FALLBACK = 1e9
 
 
-def coerce_order(v: str | int | float | None) -> float | None:
+def coerce_order(v: str | float | None) -> float | None:
     if v is None:
         return None
     try:

@@ -51,26 +51,10 @@ export function detectCharacters(
   text: string,
   codex: readonly CodexEntry[],
 ): CodexEntry[] {
-  const lookup = new Map<string, CodexEntry>();
-  const names: string[] = [];
-  for (const e of codex) {
-    if (e.title) {
-      names.push(e.title);
-      lookup.set(e.title.toLowerCase(), e);
-    }
-    for (const a of e.aliases || []) {
-      if (a) {
-        names.push(a);
-        lookup.set(a.toLowerCase(), e);
-      }
-    }
-  }
-  if (names.length === 0) return [];
-  names.sort((a, b) => b.length - a.length);
-  const re = new RegExp(`\\b(?:${names.map(escapeRegExp).join('|')})\\b`, 'gi');
+  const { regex, lookup } = buildIndex(codex);
   const seen = new Set<string>();
   const out: CodexEntry[] = [];
-  for (const m of text.matchAll(re)) {
+  for (const m of text.matchAll(regex)) {
     const entry = lookup.get(m[0].toLowerCase());
     if (!entry) continue;
     if (seen.has(entry.path)) continue;

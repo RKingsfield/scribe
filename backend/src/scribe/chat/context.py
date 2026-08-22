@@ -10,9 +10,8 @@ from pydantic import BaseModel, Field
 
 from ..storage import frontmatter as fm
 from ..storage import paths, structure
-from ..storage.helpers import coerce_order, order_sort_key
 from ..storage.project import load_project
-
+from ..storage.tree import read_chapter_scenes
 
 ScopeKind = Literal["everything", "act", "chapter", "scene", "codex"]
 
@@ -55,21 +54,15 @@ class ScopeBundle:
 def _read_section(project_root: Path, rel_path: str) -> FileSection:
     abs_path = project_root / rel_path
     text = abs_path.read_text(encoding="utf-8")
-    meta, body = fm.parse(text)
+    meta, body = fm.parse_lenient(text)
     title = meta.get("title")
     return FileSection(path=rel_path, title=title, text=body)
 
 
 def _collect_chapter(project_root: Path, ch: structure.ChapterDir) -> list[FileSection]:
     sections: list[FileSection] = [_read_section(project_root, ch.meta_rel_path)]
-    scenes = structure.list_scenes(project_root, ch.slug)
-    scene_entries: list[tuple[float | None, str]] = []
-    for s in scenes:
-        meta, _ = fm.parse((project_root / s.rel_path).read_text(encoding="utf-8"))
-        scene_entries.append((coerce_order(meta.get("order")), s.rel_path))
-    scene_entries.sort(key=lambda t: order_sort_key(t[0], t[1]))
-    for _, p in scene_entries:
-        sections.append(_read_section(project_root, p))
+    for _, rel_path, meta, body in read_chapter_scenes(project_root, ch.slug):
+        sections.append(FileSection(path=rel_path, title=meta.get("title"), text=body))
     return sections
 
 
@@ -85,7 +78,7 @@ def build_codex(project_root: Path) -> str | None:
         chunk: list[str] = [f"# {cat.name}\n"]
         for fp in sorted(cat_dir.glob("*.md")):
             text = fp.read_text(encoding="utf-8")
-            meta, body = fm.parse(text)
+            meta, body = fm.parse_lenient(text)
             title = meta.get("title") or fp.stem
             aliases = meta.get("aliases") or []
             alias_str = f" (aka {', '.join(str(a) for a in aliases)})" if aliases else ""
@@ -100,7 +93,7 @@ def build_codex(project_root: Path) -> str | None:
 def _chapter_act(project_root: Path, ch: structure.ChapterDir) -> str | None:
     """Resolve which act a chapter belongs to, from its `act` frontmatter."""
     meta_text = (project_root / ch.meta_rel_path).read_text(encoding="utf-8")
-    meta, _ = fm.parse(meta_text)
+    meta, _ = fm.parse_lenient(meta_text)
     if meta.get("act"):
         return str(meta["act"])
     return None
@@ -149,13 +142,14 @@ def build_bundle(slug: str, scope: ScopeRequest, include_codex: bool) -> ScopeBu
         if target is None:
             raise ValueError(f"chapter not found: {scope.chapter_slug}")
         meta_text = (project_root / target.meta_rel_path).read_text(encoding="utf-8")
-        meta, _ = fm.parse(meta_text)
+        meta, _ = fm.parse_lenient(meta_text)
         label = f"Chapter — {meta.get('title') or target.slug}"
         sections.extend(_collect_chapter(project_root, target))
 
     elif scope.kind == "scene":
         if not scope.scene_path:
             raise ValueError("scope.path is required when kind='scene'")
+        paths.resolve_in_project(slug, scope.scene_path)
         sec = _read_section(project_root, scope.scene_path)
         label = f"Scene — {sec.title or scope.scene_path}"
         sections.append(sec)
@@ -175,10 +169,12 @@ def build_bundle(slug: str, scope: ScopeRequest, include_codex: bool) -> ScopeBu
 def render_system_prompt(project_title: str, bundle: ScopeBundle) -> str:
     """Render the bundle into a single system-message string."""
     parts: list[str] = [
-        f"You are scribe, a writing assistant embedded in a draft of "
-        f"\"{project_title}\". Be concise and grounded in the provided context. "
-        f"When the user asks for prose, match the existing voice. When asked "
-        f"about facts, cite the relevant chapter or character by name.",
+        (
+            f"You are scribe, a writing assistant embedded in a draft of "
+            f"\"{project_title}\". Be concise and grounded in the provided context. "
+            f"When the user asks for prose, match the existing voice. When asked "
+            f"about facts, cite the relevant chapter or character by name."
+        ),
         "",
         f"Scope: {bundle.label}",
         "",

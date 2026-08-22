@@ -3,20 +3,20 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 from fastapi.responses import Response
+from pydantic import BaseModel
 
 from .. import config
 from ..rag.recipe import build_recipe, collection_name, serialize_recipe
+from ..storage import paths
 from ..storage.fs import write_text_atomic
 from ..storage.project import load_project
-from ..storage import paths
 
 log = logging.getLogger(__name__)
 
@@ -47,11 +47,15 @@ def _recipe_path(slug: str) -> Path:
     return config.RAG_RECIPES_DIR / "scribe" / f"{slug}.yml"
 
 
+def _qdrant_headers() -> dict[str, str]:
+    return {"api-key": config.QDRANT_API_KEY} if config.QDRANT_API_KEY else {}
+
+
 async def _qdrant_status(coll: str) -> QdrantStatus:
     url = f"{config.QDRANT_URL.rstrip('/')}/collections/{coll}"
     try:
         async with httpx.AsyncClient(timeout=config.QDRANT_TIMEOUT) as client:
-            r = await client.get(url)
+            r = await client.get(url, headers=_qdrant_headers())
             if r.status_code == 404:
                 return QdrantStatus(exists=False)
             r.raise_for_status()
@@ -133,8 +137,8 @@ async def delete_collection(slug: str) -> Response:
     coll = collection_name(slug)
     url = f"{config.QDRANT_URL.rstrip('/')}/collections/{coll}"
     try:
-        async with httpx.AsyncClient(timeout=config.FORGEJO_TIMEOUT) as client:
-            r = await client.delete(url)
+        async with httpx.AsyncClient(timeout=config.QDRANT_TIMEOUT) as client:
+            r = await client.delete(url, headers=_qdrant_headers())
             if r.status_code not in (200, 404):
                 r.raise_for_status()
     except httpx.HTTPError as e:
@@ -158,13 +162,12 @@ class RagQueryResponse(BaseModel):
     queried_at: str
 
 
-async def _embed(text: str) -> tuple[list[float], int]:
+async def _embed(client: httpx.AsyncClient, text: str) -> tuple[list[float], int]:
     url = f"{config.EMBED_URL.rstrip('/')}/embed"
     body = {"texts": [text]}
-    async with httpx.AsyncClient(timeout=config.RAG_INGEST_TIMEOUT) as client:
-        r = await client.post(url, json=body)
-        r.raise_for_status()
-        data = r.json()
+    r = await client.post(url, json=body)
+    r.raise_for_status()
+    data = r.json()
     vectors = data.get("vectors") or data.get("embeddings") or []
     if not vectors:
         raise RuntimeError(f"embed server returned no vectors: {data!r}")
@@ -178,19 +181,19 @@ async def query(slug: str, body: RagQuery) -> RagQueryResponse:
     if not body.text.strip():
         raise HTTPException(400, "query text is empty")
     coll = collection_name(slug)
-    try:
-        vec, dim = await _embed(body.text)
-    except (httpx.HTTPError, RuntimeError) as e:
-        raise HTTPException(502, f"embed failed: {e}")
-
     search_url = f"{config.QDRANT_URL.rstrip('/')}/collections/{coll}/points/search"
-    payload = {
-        "vector": vec,
-        "limit": max(1, min(body.limit, config.RAG_MAX_QUERY_LIMIT)),
-        "with_payload": True,
-    }
-    try:
-        async with httpx.AsyncClient(timeout=config.RAG_INGEST_TIMEOUT) as client:
+    async with httpx.AsyncClient(timeout=config.RAG_QUERY_TIMEOUT) as client:
+        try:
+            vec, dim = await _embed(client, body.text)
+        except (httpx.HTTPError, RuntimeError) as e:
+            raise HTTPException(502, f"embed failed: {e}")
+
+        payload = {
+            "vector": vec,
+            "limit": max(1, min(body.limit, config.RAG_MAX_QUERY_LIMIT)),
+            "with_payload": True,
+        }
+        try:
             r = await client.post(search_url, json=payload)
             if r.status_code == 404:
                 raise HTTPException(
@@ -200,8 +203,8 @@ async def query(slug: str, body: RagQuery) -> RagQueryResponse:
                 )
             r.raise_for_status()
             data = r.json().get("result", [])
-    except httpx.HTTPError as e:
-        raise HTTPException(502, f"qdrant search failed: {e}")
+        except httpx.HTTPError as e:
+            raise HTTPException(502, f"qdrant search failed: {e}")
 
     hits = [
         RagHit(score=float(h.get("score", 0.0)), payload=h.get("payload") or {})
@@ -210,5 +213,5 @@ async def query(slug: str, body: RagQuery) -> RagQueryResponse:
     return RagQueryResponse(
         hits=hits,
         embed_dim=dim,
-        queried_at=datetime.now(timezone.utc).isoformat(),
+        queried_at=datetime.now(UTC).isoformat(),
     )

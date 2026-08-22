@@ -32,23 +32,22 @@ class FilePutResult(FileGet):
     conflict_path: str | None = None
 
 
-class FileMove(BaseModel):
-    src: str
-    dst: str
-
-
 @router.get("/file", response_model=FileGet)
 def get_file(slug: str, path: str = Query(...)) -> FileGet:
     abs_path = paths.resolve_in_project(slug, path)
     if not abs_path.is_file():
         raise HTTPException(404, f"File not found: {path}")
-    text = abs_path.read_text(encoding="utf-8")
-    meta, body = fm.parse(text)
+    raw = abs_path.read_bytes()
+    # etag must hash the same bytes PUT's If-Match check does, not read_text()'s
+    # universal-newline-translated form, or CRLF files 412 forever.
+    # Lenient parse: a broken header comes back as editable body text, and
+    # serialize({}, body) round-trips it unchanged, so the file is fixable in-app.
+    meta, body = fm.parse_lenient(raw.decode("utf-8"))
     return FileGet(
         path=path,
         body=body,
         frontmatter=meta,
-        etag=file_etag(abs_path),
+        etag=file_etag(abs_path, content=raw),
         word_count=fm.word_count(body),
     )
 
@@ -64,25 +63,33 @@ def put_file(
     device_id: str | None = Header(default=None, alias="X-Device-Id"),
 ) -> FilePutResult:
     abs_path = paths.resolve_in_project(slug, path)
+    # An If-Match claim about a file that no longer exists is a stale-path write
+    # (e.g. a conflict resolve racing a scene move) — refuse rather than create a
+    # ghost. save-as-conflict callers keep the recreate path: a deleted scene with
+    # queued edits resurrects loss-free instead of jamming the flush queue.
+    if if_match is not None and not abs_path.exists() and on_conflict != "save-as-conflict":
+        raise HTTPException(412, f"conditional write to missing file: {path}")
     if abs_path.exists() and if_match is not None:
         current = file_etag(abs_path)
         if if_match != current:
             if on_conflict == "save-as-conflict":
                 conflict_rel = _write_conflict(slug, path, payload, device_id)
+                canonical_text = abs_path.read_text(encoding="utf-8")
+                canonical_meta, canonical_body = fm.parse_lenient(canonical_text)
                 response.headers["ETag"] = current
                 return FilePutResult(
                     path=path,
-                    body=payload.body,
-                    frontmatter=payload.frontmatter or {},
+                    body=canonical_body,
+                    frontmatter=canonical_meta,
                     etag=current,
-                    word_count=fm.word_count(payload.body),
+                    word_count=fm.word_count(canonical_body),
                     conflict=True,
                     conflict_path=conflict_rel,
                 )
             raise HTTPException(412, f"etag mismatch (server={current})")
     text = fm.serialize(payload.frontmatter or {}, payload.body)
     write_text_atomic(abs_path, text)
-    new_etag = file_etag(abs_path)
+    new_etag = file_etag(abs_path, content=text.encode("utf-8"))
     response.headers["ETag"] = new_etag
     return FilePutResult(
         path=path,
@@ -112,32 +119,19 @@ def _write_conflict(
 
 
 @router.delete("/file", status_code=204)
-def delete_file(slug: str, path: str = Query(...)) -> Response:
+def delete_file(
+    slug: str,
+    path: str = Query(...),
+    if_match: str | None = Header(default=None, alias="If-Match"),
+) -> Response:
     abs_path = paths.resolve_in_project(slug, path)
     if not abs_path.is_file():
         raise HTTPException(404, f"File not found: {path}")
+    # A conditional delete is a replayed offline delete: the file changed elsewhere
+    # since it was queued, so refuse rather than destroy the newer edit.
+    if if_match is not None:
+        current = file_etag(abs_path)
+        if if_match != current:
+            raise HTTPException(412, f"etag mismatch (server={current})")
     abs_path.unlink()
     return Response(status_code=204)
-
-
-@router.post("/file/move", response_model=FileGet)
-def move_file(slug: str, move: FileMove, response: Response) -> FileGet:
-    src = paths.resolve_in_project(slug, move.src)
-    dst = paths.resolve_in_project(slug, move.dst)
-    if not src.is_file():
-        raise HTTPException(404, f"Source not found: {move.src}")
-    if dst.exists():
-        raise HTTPException(409, f"Destination exists: {move.dst}")
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    src.rename(dst)
-    text = dst.read_text(encoding="utf-8")
-    meta, body = fm.parse(text)
-    new_etag = file_etag(dst)
-    response.headers["ETag"] = new_etag
-    return FileGet(
-        path=move.dst,
-        body=body,
-        frontmatter=meta,
-        etag=new_etag,
-        word_count=fm.word_count(body),
-    )

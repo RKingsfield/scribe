@@ -19,7 +19,7 @@ dependencies = [
 [project.optional-dependencies]
 test = [
   "pytest>=8.0",
-  "ruff>=0.15",
+  "ruff~=0.16.0",
   "mypy>=1.10",
   "types-PyYAML",
   "types-Markdown",
@@ -34,6 +34,10 @@ where = ["src"]
 
 [tool.ruff]
 line-length = 100
+
+[tool.ruff.lint]
+# B008: FastAPI Query/Depends in argument defaults is the framework's idiom
+ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

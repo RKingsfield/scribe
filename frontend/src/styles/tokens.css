@@ -34,7 +34,7 @@
 
   --fg: #e8e6e0;
   --fg-mid: #a8a59c;
-  --fg-dim: #6a6760;
+  --fg-dim: #8a8780;
 
   --accent: #d8a05e;
   --accent-soft: rgba(216, 160, 94, 0.16);
@@ -56,6 +56,8 @@
     radial-gradient(circle at 78% 64%, rgba(120, 90, 50, 0.08), transparent 38%),
     radial-gradient(circle at 50% 90%, rgba(120, 90, 50, 0.06), transparent 30%),
     #2a2018;
+
+  --scrim: rgba(0, 0, 0, 0.5);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.32);
   --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.4);
@@ -85,7 +87,7 @@
 
   --fg: #2a221a;
   --fg-mid: #6a5e4c;
-  --fg-dim: #9a8e76;
+  --fg-dim: #746a52;
 
   --accent: #b8761e;
   --accent-soft: rgba(184, 118, 30, 0.14);
@@ -107,6 +109,8 @@
     radial-gradient(circle at 78% 64%, rgba(140, 100, 50, 0.07), transparent 38%),
     radial-gradient(circle at 50% 90%, rgba(140, 100, 50, 0.05), transparent 30%),
     #c8a875;
+
+  --scrim: rgba(0, 0, 0, 0.35);
 
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
   --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.10);
@@ -162,6 +166,15 @@ input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+button:focus-visible,
+.icon-btn:focus-visible,
+.ghost-btn:focus-visible,
+.tab:focus-visible,
+[role="button"]:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .error { color: var(--danger); }

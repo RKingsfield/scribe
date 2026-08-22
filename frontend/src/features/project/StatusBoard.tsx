@@ -3,9 +3,20 @@ import {
   useDraggable,
   useDroppable,
 } from '@dnd-kit/core';
-import type { ChapterEntry, ProjectTree } from '../../lib/api';
-import type { SceneCardData, Status } from './PlanBoard';
-import { STATUSES } from './PlanBoard';
+import type { ChapterEntry, ProjectTree, SceneEntry } from '../../lib/api';
+import { onActivate } from '../../lib/a11y';
+
+export type Status = 'draft' | 'revision' | 'final';
+const STATUSES: { id: Status; label: string; color: string }[] = [
+  { id: 'draft', label: 'Draft', color: 'var(--fg-mid)' },
+  { id: 'revision', label: 'Revision', color: 'var(--warn)' },
+  { id: 'final', label: 'Final', color: 'var(--success)' },
+];
+
+export interface SceneCardData {
+  scene: SceneEntry;
+  chapter: ChapterEntry;
+}
 
 export function flattenScenes(tree: ProjectTree): SceneCardData[] {
   const out: SceneCardData[] = [];
@@ -153,6 +164,7 @@ function DraggableSceneCard({
       {...attributes}
       {...listeners}
       onClick={() => onOpenFile(scene.path)}
+      onKeyDown={onActivate(() => onOpenFile(scene.path))}
     >
       <div className="ic-head">
         <span className="ic-num">{label}</span>

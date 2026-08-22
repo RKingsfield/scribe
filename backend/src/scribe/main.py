@@ -1,15 +1,17 @@
 import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import Any
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from . import __version__
 from .config import SCRIBE_AUTOCOMMIT_DISABLED, STATIC_ROOT, WRITING_ROOT
-from .routes import chat, export, files, git as git_routes, projects, rag, review, structure_ops, sync
+from .routes import chat, export, files, projects, rag, review, structure_ops, sync
+from .routes import git as git_routes
 
 logging.basicConfig(
     format="%(asctime)s %(levelname)s %(name)s — %(message)s",
@@ -34,14 +36,21 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="scribe", version=__version__, lifespan=lifespan)
 
 
-@app.get("/api/health")
-def health() -> dict[str, Any]:
-    return {
-        "status": "ok",
-        "version": __version__,
-        "writing_root": str(WRITING_ROOT),
-        "writing_root_exists": WRITING_ROOT.exists(),
-    }
+class HealthResponse(BaseModel):
+    status: str
+    version: str
+    writing_root: str
+    writing_root_exists: bool
+
+
+@app.get("/api/health", response_model=HealthResponse)
+def health() -> HealthResponse:
+    return HealthResponse(
+        status="ok",
+        version=__version__,
+        writing_root=str(WRITING_ROOT),
+        writing_root_exists=WRITING_ROOT.exists(),
+    )
 
 
 app.include_router(projects.router)
@@ -72,6 +81,14 @@ if STATIC_ROOT.exists():
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404)
         candidate = (STATIC_ROOT / full_path).resolve()
-        if full_path and candidate.is_file() and str(candidate).startswith(str(STATIC_ROOT.resolve())):
+        if full_path and candidate.is_file() and _within(candidate, STATIC_ROOT.resolve()):
             return FileResponse(candidate)
         return FileResponse(STATIC_ROOT / "index.html")
+
+
+def _within(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+        return True
+    except ValueError:
+        return False

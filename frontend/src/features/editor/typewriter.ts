@@ -8,19 +8,25 @@ const TYPEWRITER_THEME = EditorView.theme({
   },
 });
 
+// editorAttributes, not view.dom.classList — CM6 recomputes the class attribute from
+// facets on every update (e.g. focus changes), which clobbers directly-mutated classList entries
+const TYPEWRITER_CLASS = EditorView.editorAttributes.of({ class: 'cm-typewriter' });
+
 const TYPEWRITER_PLUGIN = ViewPlugin.fromClass(
   class {
+    private destroyed = false;
     constructor(public view: EditorView) {
-      view.dom.classList.add('cm-typewriter');
       queueMicrotask(() => this.recenter());
     }
     update(u: ViewUpdate) {
-      if (u.selectionSet || u.docChanged) this.recenter();
+      // dispatch is forbidden synchronously inside update(); defer to a microtask
+      if (u.selectionSet || u.docChanged) queueMicrotask(() => this.recenter());
     }
     destroy() {
-      this.view.dom.classList.remove('cm-typewriter');
+      this.destroyed = true;
     }
     private recenter() {
+      if (this.destroyed) return;
       const head = this.view.state.selection.main.head;
       this.view.dispatch({
         effects: EditorView.scrollIntoView(head, { y: 'center' }),
@@ -32,7 +38,7 @@ const TYPEWRITER_PLUGIN = ViewPlugin.fromClass(
 export const typewriterCompartment = new Compartment();
 
 export function typewriterEnabled(): Extension {
-  return [TYPEWRITER_THEME, TYPEWRITER_PLUGIN];
+  return [TYPEWRITER_THEME, TYPEWRITER_CLASS, TYPEWRITER_PLUGIN];
 }
 
 export function typewriterDisabled(): Extension {

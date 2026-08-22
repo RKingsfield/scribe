@@ -20,12 +20,14 @@ import { CSS } from '@dnd-kit/utilities';
 import { ReferenceEntry } from '../../lib/api';
 import { syncEngine } from '../../lib/syncEngine';
 import { toast } from '../../app/Toast';
+import { onActivate } from '../../lib/a11y';
 
 interface SortableProps {
   setNodeRef: (el: HTMLElement | null) => void;
   style: React.CSSProperties;
   attributes: DraggableAttributes;
   listeners: DraggableSyntheticListeners;
+  disabled: boolean;
 }
 
 export function RefList({
@@ -66,9 +68,11 @@ export function RefList({
     tagFilter === 'all'
       ? items
       : items.filter((r) => r.tags.includes(tagFilter));
+  // Reordering a filtered subset can't map cleanly back onto the full list's order — disable instead.
+  const dragDisabled = tagFilter !== 'all';
 
   const handleRefDragEnd = async (e: DragEndEvent) => {
-    if (!e.over) return;
+    if (dragDisabled || !e.over) return;
     const activeId = String(e.active.id);
     const overId = String(e.over.id);
     if (activeId === overId) return;
@@ -122,6 +126,7 @@ export function RefList({
                   activePath={activePath}
                   onSelect={onSelect}
                   onTreeChanged={onTreeChanged}
+                  dragDisabled={dragDisabled}
                 />
               ))}
             </ul>
@@ -138,9 +143,10 @@ function SortableRefRow(props: {
   activePath: string | null;
   onSelect: (path: string) => void;
   onTreeChanged: () => void;
+  dragDisabled: boolean;
 }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
-    useSortable({ id: props.item.path });
+    useSortable({ id: props.item.path, disabled: props.dragDisabled });
   const style: React.CSSProperties = {
     transform: CSS.Transform.toString(transform),
     transition: transition ?? undefined,
@@ -150,7 +156,7 @@ function SortableRefRow(props: {
   return (
     <RefRow
       {...props}
-      sortable={{ setNodeRef, style, attributes, listeners }}
+      sortable={{ setNodeRef, style, attributes, listeners, disabled: props.dragDisabled }}
     />
   );
 }
@@ -187,10 +193,13 @@ function RefRow({
       style={sortable?.style}
       className={`ref-row${item.path === activePath ? ' active' : ''}`}
       onClick={() => onSelect(item.path)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={onActivate(() => onSelect(item.path))}
     >
       <span
         className="row-grip"
-        title="Drag to reorder"
+        title={sortable?.disabled ? 'Clear filter to reorder' : 'Drag to reorder'}
         {...(sortable?.attributes ?? {})}
         {...(sortable?.listeners ?? {})}
       >

@@ -6,6 +6,7 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
+from starlette.concurrency import run_in_threadpool
 
 from ..export.manuscript import ExportOptions, compose_manuscript
 from ..export.pandoc import pandoc, safe_filename
@@ -25,6 +26,14 @@ PANDOC_FORMATS: dict[str, tuple[str, str]] = {
 }
 
 
+def _export_data(slug: str, options: ExportOptions) -> tuple[str, str, str | None]:
+    """Compose manuscript and return (markdown, title, author)."""
+    md = compose_manuscript(slug, options)
+    project_root = paths.project_root(slug)
+    project = load_project(project_root)
+    return md, project.title, project.author
+
+
 @router.get("")
 async def export_project(
     slug: str,
@@ -33,14 +42,12 @@ async def export_project(
     include_scene_beats: bool = Query(False),
     title_page: bool = Query(True),
 ) -> Response:
-    root = paths.project_root(slug)
-    project = load_project(root)
     options = ExportOptions(
         include_summaries=include_summaries,
         include_scene_beats=include_scene_beats,
         title_page=title_page,
     )
-    md = compose_manuscript(slug, options)
+    md, title, author = await run_in_threadpool(_export_data, slug, options)
     filename = safe_filename(slug, format)
 
     if format == "md":
@@ -54,7 +61,7 @@ async def export_project(
         raise HTTPException(400, f"unsupported format: {format}")
 
     target, mime = PANDOC_FORMATS[format]
-    output = await pandoc(md, target, title=project.title, author=project.author)
+    output = await pandoc(md, target, title=title, author=author)
     return Response(
         content=output,
         media_type=mime,

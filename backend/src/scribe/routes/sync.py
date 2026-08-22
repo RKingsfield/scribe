@@ -4,7 +4,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ..storage import paths
-from ..storage.manifest import TRACKED_SUFFIXES, walk_project
+from ..storage.manifest import ManifestEntry, iter_tracked_files, walk_project
 
 router = APIRouter(prefix="/api/projects/{slug}", tags=["sync"])
 
@@ -14,13 +14,6 @@ _CONFLICT_RE = re.compile(
     r"(?P<ts>\d{8}T\d{6}Z)\."
     r"(?P<ext>[^.]+)$"
 )
-
-
-class ManifestEntry(BaseModel):
-    path: str
-    mtime_ns: int
-    size: int
-    sha256: str
 
 
 class Manifest(BaseModel):
@@ -45,25 +38,17 @@ class ConflictList(BaseModel):
 @router.get("/sync", response_model=Manifest)
 def get_manifest(slug: str) -> Manifest:
     root = paths.project_root(slug)
-    return Manifest(
-        slug=slug,
-        entries=[ManifestEntry(**e) for e in walk_project(root)],
-    )
+    return Manifest(slug=slug, entries=walk_project(root))
 
 
 @router.get("/conflicts", response_model=ConflictList)
 def list_conflicts(slug: str) -> ConflictList:
     root = paths.project_root(slug)
     out: list[ConflictEntry] = []
-    for p in sorted(root.rglob("*")):
+    for p in iter_tracked_files(root):
         name = p.name
         m = _CONFLICT_RE.match(name)
         if not m:
-            continue
-        if not p.is_file() or p.suffix not in TRACKED_SUFFIXES:
-            continue
-        rel_parts = p.relative_to(root).parts
-        if any(part.startswith(".") for part in rel_parts):
             continue
         rel = p.relative_to(root).as_posix()
         prefix = rel[: -len(name)]

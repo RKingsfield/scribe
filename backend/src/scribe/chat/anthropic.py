@@ -5,13 +5,22 @@ from __future__ import annotations
 import json
 import logging
 import re
-from typing import Any, AsyncIterator
+from collections.abc import AsyncIterator
+from typing import Any, TypedDict
 
 import httpx
 
 from .. import config
 
 log = logging.getLogger(__name__)
+
+
+class OpenAIChatBody(TypedDict, total=False):
+    model: str
+    messages: list[dict[str, Any]]
+    stream: bool
+    temperature: float
+    max_tokens: int
 
 ANTHROPIC_URL = "https://api.anthropic.com/v1/messages"
 ANTHROPIC_VERSION = "2023-06-01"
@@ -50,7 +59,7 @@ def convert_messages(messages: list[dict[str, Any]]) -> tuple[str, list[dict[str
     return "\n\n".join(system_parts), out
 
 
-def build_anthropic_body(openai_body: dict[str, Any]) -> dict[str, Any]:
+def build_anthropic_body(openai_body: OpenAIChatBody) -> dict[str, Any]:
     """Rewrite an OpenAI-style chat completion body into an Anthropic body."""
     system, messages = convert_messages(openai_body.get("messages", []))
     body: dict[str, Any] = {
@@ -71,6 +80,8 @@ def strip_think_blocks(text: str) -> str:
 
 
 class ThinkBlockFilter:
+    """Suppresses <think>...</think> spans across chunks; flush() emits any held non-tag text but drops an unterminated think block."""
+
     def __init__(self) -> None:
         self._buf = ""
         self._in_think = False
@@ -82,7 +93,7 @@ class ThinkBlockFilter:
             if self._in_think:
                 close = self._buf.find("</think>")
                 if close == -1:
-                    if len(self._buf) > 8 and "</think>"[:1] not in self._buf[-8:]:
+                    if len(self._buf) > 65536:
                         self._buf = self._buf[-8:]
                     break
                 self._buf = self._buf[close + 8:]
@@ -103,6 +114,11 @@ class ThinkBlockFilter:
                     self._in_think = True
         return "".join(out)
 
+    def flush(self) -> str:
+        out = "" if self._in_think else self._buf
+        self._buf = ""
+        return out
+
 
 def _wrap_text_chunk(text: str) -> bytes:
     """Encode a text fragment as an OpenAI-style streaming chunk."""
@@ -110,7 +126,7 @@ def _wrap_text_chunk(text: str) -> bytes:
     return f"data: {json.dumps(payload)}\n\n".encode()
 
 
-async def complete_anthropic(openai_body: dict[str, Any]) -> str:
+async def complete_anthropic(openai_body: OpenAIChatBody) -> str:
     """Non-streaming Anthropic completion. Returns the concatenated text."""
     body = build_anthropic_body(openai_body)
     body["stream"] = False
@@ -132,7 +148,7 @@ async def complete_anthropic(openai_body: dict[str, Any]) -> str:
     return strip_think_blocks(out).strip()
 
 
-async def stream_anthropic(openai_body: dict[str, Any]) -> AsyncIterator[bytes]:
+async def stream_anthropic(openai_body: OpenAIChatBody) -> AsyncIterator[bytes]:
     """Connect to api.anthropic.com and re-emit chunks in OpenAI SSE format.
 
     Yields raw SSE bytes ready to forward to the client. Surface upstream
@@ -152,54 +168,62 @@ async def stream_anthropic(openai_body: dict[str, Any]) -> AsyncIterator[bytes]:
     }
 
     try:
-        async with httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client:
-            async with client.stream("POST", ANTHROPIC_URL, json=body, headers=headers) as resp:
-                if resp.status_code >= 400:
-                    err_text = await resp.aread()
-                    err = {
-                        "status": resp.status_code,
-                        "body": err_text.decode("utf-8", errors="replace")[:2000],
-                    }
-                    yield f"event: error\ndata: {json.dumps(err)}\n\n".encode()
+        async with (
+            httpx.AsyncClient(timeout=config.LLM_STREAM_TIMEOUT) as client,
+            client.stream("POST", ANTHROPIC_URL, json=body, headers=headers) as resp,
+        ):
+            if resp.status_code >= 400:
+                err_text = await resp.aread()
+                err = {
+                    "status": resp.status_code,
+                    "body": err_text.decode("utf-8", errors="replace")[:2000],
+                }
+                yield f"event: error\ndata: {json.dumps(err)}\n\n".encode()
+                return
+            event_name = ""
+            async for raw in resp.aiter_lines():
+                line = raw.rstrip("\r")
+                if not line:
+                    event_name = ""
+                    continue
+                if line.startswith(":"):
+                    continue
+                if line.startswith("event:"):
+                    event_name = line[6:].strip()
+                    continue
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].lstrip()
+                try:
+                    parsed = json.loads(data)
+                except json.JSONDecodeError:
+                    continue
+                ev_type = parsed.get("type") or event_name
+                if ev_type == "content_block_delta":
+                    delta = parsed.get("delta") or {}
+                    if delta.get("type") == "text_delta":
+                        text = delta.get("text") or ""
+                        if text:
+                            filtered = think_filter.feed(text)
+                            if filtered:
+                                yield _wrap_text_chunk(filtered)
+                elif ev_type == "message_stop":
+                    tail = think_filter.flush()
+                    if tail:
+                        yield _wrap_text_chunk(tail)
+                    yield b"data: [DONE]\n\n"
                     return
-                event_name = ""
-                async for raw in resp.aiter_lines():
-                    line = raw.rstrip("\r")
-                    if not line:
-                        event_name = ""
-                        continue
-                    if line.startswith(":"):
-                        continue
-                    if line.startswith("event:"):
-                        event_name = line[6:].strip()
-                        continue
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[5:].lstrip()
-                    try:
-                        parsed = json.loads(data)
-                    except json.JSONDecodeError:
-                        continue
-                    ev_type = parsed.get("type") or event_name
-                    if ev_type == "content_block_delta":
-                        delta = parsed.get("delta") or {}
-                        if delta.get("type") == "text_delta":
-                            text = delta.get("text") or ""
-                            if text:
-                                filtered = think_filter.feed(text)
-                                if filtered:
-                                    yield _wrap_text_chunk(filtered)
-                    elif ev_type == "message_stop":
-                        yield b"data: [DONE]\n\n"
-                        return
-                    elif ev_type == "error":
-                        err = parsed.get("error") or parsed
-                        msg = err.get("message") if isinstance(err, dict) else str(err)
-                        out = {"status": 502, "body": str(msg or "anthropic stream error")}
-                        yield f"event: error\ndata: {json.dumps(out)}\n\n".encode()
-                        return
-                # stream ended without explicit message_stop — terminate cleanly
-                yield b"data: [DONE]\n\n"
+                elif ev_type == "error":
+                    err = parsed.get("error") or parsed
+                    msg = err.get("message") if isinstance(err, dict) else str(err)
+                    out = {"status": 502, "body": str(msg or "anthropic stream error")}
+                    yield f"event: error\ndata: {json.dumps(out)}\n\n".encode()
+                    return
+            # stream ended without explicit message_stop — terminate cleanly
+            tail = think_filter.flush()
+            if tail:
+                yield _wrap_text_chunk(tail)
+            yield b"data: [DONE]\n\n"
     except httpx.HTTPError as e:
         log.exception("anthropic stream failed")
         err = {"status": 502, "body": f"anthropic unreachable: {e}"}

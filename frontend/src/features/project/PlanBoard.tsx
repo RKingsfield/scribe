@@ -20,19 +20,13 @@ import { toast } from '../../app/Toast';
 import { ActsEditor } from './ActsEditor';
 import { ProjectContext } from './ProjectView';
 import { OutlineGrid } from './OutlineBoard';
-import { StatusBoard, flattenScenes, sceneInAct } from './StatusBoard';
-
-export type Status = 'draft' | 'revision' | 'final';
-export const STATUSES: { id: Status; label: string; color: string }[] = [
-  { id: 'draft', label: 'Draft', color: 'var(--fg-mid)' },
-  { id: 'revision', label: 'Revision', color: 'var(--warn)' },
-  { id: 'final', label: 'Final', color: 'var(--success)' },
-];
-
-export interface SceneCardData {
-  scene: SceneEntry;
-  chapter: ChapterEntry;
-}
+import {
+  type SceneCardData,
+  type Status,
+  StatusBoard,
+  flattenScenes,
+  sceneInAct,
+} from './StatusBoard';
 
 function sceneStatusOf(s: SceneEntry): Status {
   return statusClass(s.status);
@@ -90,7 +84,11 @@ export function PlanBoard() {
     try {
       const f = await syncEngine.getFile(slug, card.scene.path);
       const fm = { ...f.frontmatter, status: next };
-      await syncEngine.saveFile(slug, card.scene.path, f.body, fm, f.etag);
+      const result = await syncEngine.saveFile(slug, card.scene.path, f.body, fm, f.etag);
+      if (result === 'blocked') {
+        toast('Blocked by conflict — resolve it first', 'error');
+        return;
+      }
       refreshTree();
     } catch (e) {
       toast(`Failed to update status: ${e}`, 'error');
@@ -131,7 +129,11 @@ export function PlanBoard() {
       const r = await syncEngine.createScene(slug, ch.slug, {});
       if (status !== 'draft') {
         const f = await syncEngine.getFile(slug, r.path);
-        await syncEngine.saveFile(slug, r.path, f.body, { ...f.frontmatter, status }, f.etag);
+        const result = await syncEngine.saveFile(slug, r.path, f.body, { ...f.frontmatter, status }, f.etag);
+        if (result === 'blocked') {
+          toast('Blocked by conflict — resolve it first', 'error');
+          return;
+        }
       }
       refreshTree();
     } catch (e) {

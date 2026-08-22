@@ -4,15 +4,9 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from scribe.main import app
 
-
-def client() -> TestClient:
-    return TestClient(app)
-
-
-def test_full_flush_roundtrip(writing_root: Path) -> None:
-    c = client()
+def test_full_flush_roundtrip(writing_root: Path, client: TestClient) -> None:
+    c = client
 
     # 1. Create a project
     r = c.post("/api/projects/sync-test/init", json={"title": "Sync Test", "author": "Test"})
@@ -106,8 +100,10 @@ def test_full_flush_roundtrip(writing_root: Path) -> None:
     conflict_path = payload["conflict_path"]
     assert "conflict" in conflict_path
     assert "test-device" in conflict_path
-    # The returned etag is the server's current etag (canonical unchanged)
+    # Response returns the canonical file's content and etag, not the submitted body
     assert payload["etag"] == etag2
+    assert "A figure stepped through" in payload["body"]
+    assert "Conflicting edit" not in payload["body"]
 
     # 9. Verify GET /conflicts shows the conflict
     r = c.get("/api/projects/sync-test/conflicts")
@@ -119,8 +115,10 @@ def test_full_flush_roundtrip(writing_root: Path) -> None:
     assert match[0]["device_id"] == "test-device"
 
 
-def test_etag_mismatch_without_conflict_header_returns_412(writing_root: Path) -> None:
-    c = client()
+def test_etag_mismatch_without_conflict_header_returns_412(
+    writing_root: Path, client: TestClient
+) -> None:
+    c = client
 
     c.post("/api/projects/etag-test/init", json={"title": "ETag Test"})
     r = c.post(
@@ -147,8 +145,8 @@ def test_etag_mismatch_without_conflict_header_returns_412(writing_root: Path) -
     assert r.status_code == 412
 
 
-def test_manifest_includes_all_structural_files(writing_root: Path) -> None:
-    c = client()
+def test_manifest_includes_all_structural_files(writing_root: Path, client: TestClient) -> None:
+    c = client
 
     c.post("/api/projects/manifest-test/init", json={"title": "Manifest Test"})
     c.post(

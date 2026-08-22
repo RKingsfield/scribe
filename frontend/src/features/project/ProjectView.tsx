@@ -10,10 +10,12 @@ import {
 import { CloudDownload, Download, BookOpen, Search, SunMoon, PanelLeft, PanelRight } from 'lucide-react';
 import { QuillMark } from '../../app/QuillMark';
 import { ProjectTree } from '../../lib/api';
+import { GetEditorBuffer } from '../../lib/useFileEditor';
 import { syncEngine } from '../../lib/syncEngine';
 import { CommandPalette } from '../../app/CommandPalette';
 import { StatusBar } from '../../app/StatusBar';
 import { ConflictsBanner } from '../sync/ConflictsBanner';
+import { StuckOpsBanner } from '../sync/StuckOpsBanner';
 import { RagPanel } from '../rag/RagPanel';
 import { ExportPanel } from '../export/ExportPanel';
 import { ToastContainer, toast } from '../../app/Toast';
@@ -29,7 +31,8 @@ export interface HeaderState {
   activePath: string | null;
   activeTitle: string | null;
   liveWordCount: number;
-  saveState: 'clean' | 'dirty' | 'saving' | 'saved' | 'error';
+  saveState: 'clean' | 'dirty' | 'saving' | 'saved' | 'error' | 'blocked';
+  getEditorBuffer?: GetEditorBuffer;
   typewriter?: boolean;
   setTypewriter?: (next: boolean) => void;
   sidebarCollapsed?: boolean;
@@ -112,17 +115,18 @@ export function ProjectView() {
   const handlePrefetch = useCallback(async () => {
     if (!slug) return;
     toast('Syncing for offline…');
+    const unsub = syncEngine.subscribe((snap) => {
+      if (snap.prefetchProgress) {
+        toast(`Syncing… ${snap.prefetchProgress.done}/${snap.prefetchProgress.total} files`);
+      }
+    });
     try {
-      const unsub = syncEngine.subscribe((snap) => {
-        if (snap.prefetchProgress) {
-          toast(`Syncing… ${snap.prefetchProgress.done}/${snap.prefetchProgress.total} files`);
-        }
-      });
       await syncEngine.prefetchProject(slug);
-      unsub();
       toast('Ready for offline', 'success');
     } catch (e) {
       toast(`Offline sync failed: ${e}`, 'error');
+    } finally {
+      unsub();
     }
   }, [slug]);
 
@@ -209,7 +213,8 @@ export function ProjectView() {
         </div>
       </nav>
       <main className="project-main">
-        <ConflictsBanner slug={slug} />
+        <ConflictsBanner slug={slug} getEditorBuffer={header.getEditorBuffer} />
+        <StuckOpsBanner slug={slug} />
         {error && (
           <p className="error" style={{ padding: '0.5rem 1rem', margin: 0 }}>
             {error}
@@ -292,7 +297,7 @@ function buildBreadcrumb(
   if (ch) {
     const num = ch.chapter !== null ? `Ch. ${ch.chapter}` : ch.slug;
     out.push({ label: `${num} — ${ch.title || ch.slug}` });
-    if (path !== ch.meta_path && ch.scenes.length > 1) {
+    if (path !== ch.meta_path) {
       const sc = ch.scenes.find((s) => s.path === path);
       if (sc) out.push({ label: sc.title || `Scene ${sc.scene ?? ''}`, active: true });
     } else {

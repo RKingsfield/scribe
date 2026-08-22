@@ -1,4 +1,5 @@
 from pathlib import Path
+
 from fastapi import HTTPException
 
 from .. import config
@@ -38,7 +39,9 @@ def resolve_in_project(slug: str, rel_path: str) -> Path:
     if not rel_path:
         raise HTTPException(400, "Empty path")
     p = Path(rel_path)
-    if p.is_absolute() or any(part in {"..", ""} for part in p.parts):
+    if p.is_absolute() or any(
+        part in {"..", ""} or part.startswith(".") for part in p.parts
+    ):
         raise HTTPException(400, f"Invalid path: {rel_path!r}")
     try:
         abs_path = (root / p).resolve()

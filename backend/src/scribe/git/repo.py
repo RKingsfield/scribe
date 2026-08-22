@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import configparser
 import logging
 from pathlib import Path
 
@@ -13,10 +14,33 @@ def ensure_repo(root: Path, author_name: str, author_email: str) -> Repo:
         repo = Repo(root)
     except InvalidGitRepositoryError:
         repo = Repo.init(root, initial_branch="main")
-    with repo.config_writer(config_level="repository") as cw:
-        cw.set_value("user", "name", author_name)
-        cw.set_value("user", "email", author_email)
-        cw.set_value("commit", "gpgsign", "false")
+
+    with repo.config_reader(config_level="repository") as cr:
+        try:
+            current_name = cr.get_value("user", "name")
+        except (KeyError, ValueError, configparser.NoSectionError, configparser.NoOptionError):
+            current_name = None
+        try:
+            current_email = cr.get_value("user", "email")
+        except (KeyError, ValueError, configparser.NoSectionError, configparser.NoOptionError):
+            current_email = None
+        try:
+            current_gpgsign = cr.get_value("commit", "gpgsign")
+        except (KeyError, ValueError, configparser.NoSectionError, configparser.NoOptionError):
+            current_gpgsign = None
+
+    needs_write = (
+        current_name != author_name
+        or current_email != author_email
+        or str(current_gpgsign).lower() != "false"
+    )
+
+    if needs_write:
+        with repo.config_writer(config_level="repository") as cw:
+            cw.set_value("user", "name", author_name)
+            cw.set_value("user", "email", author_email)
+            cw.set_value("commit", "gpgsign", "false")
+
     return repo
 
 

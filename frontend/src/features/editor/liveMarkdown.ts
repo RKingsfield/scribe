@@ -1,4 +1,4 @@
-import { Range, RangeSetBuilder, StateField } from '@codemirror/state';
+import { EditorState, Range, RangeSetBuilder, StateField } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import type { SyntaxNode } from '@lezer/common';
 import {
@@ -412,71 +412,48 @@ const liveMarkdownTheme = EditorView.theme({
   },
 });
 
+function buildTableWidgetDecorations(state: EditorState): Range<Decoration>[] {
+  const decos: Range<Decoration>[] = [];
+  const cursors = state.selection.ranges.map((r) => r.from);
+  const cursorIn = (from: number, to: number) =>
+    cursors.some((c) => c >= from && c <= to);
+  syntaxTree(state).iterate({
+    enter: (n) => {
+      if (n.name === 'Table' && !cursorIn(n.from, n.to)) {
+        decos.push(
+          Decoration.replace({
+            widget: new TableWidget(n.node, state.doc, n.from),
+            block: true,
+            inclusive: false,
+          }).range(n.from, n.to),
+        );
+        return false;
+      }
+      if (n.name === 'HorizontalRule' && !cursorIn(n.from, n.to)) {
+        decos.push(
+          Decoration.replace({
+            widget: new HrWidget(),
+            block: true,
+            inclusive: false,
+          }).range(n.from, n.to),
+        );
+        return false;
+      }
+    },
+  });
+  decos.sort((a, b) => a.from - b.from);
+  return decos;
+}
+
 const tableWidgetField = StateField.define<DecorationSet>({
   create(state) {
-    const decos: Range<Decoration>[] = [];
-    const cursors = state.selection.ranges.map((r) => r.from);
-    const cursorIn = (from: number, to: number) =>
-      cursors.some((c) => c >= from && c <= to);
-    syntaxTree(state).iterate({
-      enter: (n) => {
-        if (n.name === 'Table' && !cursorIn(n.from, n.to)) {
-          decos.push(
-            Decoration.replace({
-              widget: new TableWidget(n.node, state.doc, n.from),
-              block: true,
-              inclusive: false,
-            }).range(n.from, n.to),
-          );
-          return false;
-        }
-        if (n.name === 'HorizontalRule' && !cursorIn(n.from, n.to)) {
-          decos.push(
-            Decoration.replace({
-              widget: new HrWidget(),
-              block: true,
-              inclusive: false,
-            }).range(n.from, n.to),
-          );
-          return false;
-        }
-      },
-    });
-    decos.sort((a, b) => a.from - b.from);
+    const decos = buildTableWidgetDecorations(state);
     return Decoration.set(decos, true);
   },
   update(decos, tr) {
     if (!tr.docChanged && !tr.selection) return decos;
     const state = tr.state;
-    const out: Range<Decoration>[] = [];
-    const cursors = state.selection.ranges.map((r) => r.from);
-    const cursorIn = (from: number, to: number) =>
-      cursors.some((c) => c >= from && c <= to);
-    syntaxTree(state).iterate({
-      enter: (n) => {
-        if (n.name === 'Table' && !cursorIn(n.from, n.to)) {
-          out.push(
-            Decoration.replace({
-              widget: new TableWidget(n.node, state.doc, n.from),
-              block: true,
-              inclusive: false,
-            }).range(n.from, n.to),
-          );
-          return false;
-        }
-        if (n.name === 'HorizontalRule' && !cursorIn(n.from, n.to)) {
-          out.push(
-            Decoration.replace({
-              widget: new HrWidget(),
-              block: true,
-              inclusive: false,
-            }).range(n.from, n.to),
-          );
-          return false;
-        }
-      },
-    });
-    out.sort((a, b) => a.from - b.from);
+    const out = buildTableWidgetDecorations(state);
     return Decoration.set(out, true);
   },
   provide: (f) => EditorView.decorations.from(f),

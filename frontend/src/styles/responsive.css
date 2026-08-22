@@ -63,7 +63,7 @@
     display: block;
     position: fixed;
     inset: var(--topbar-h) 0 var(--status-h) 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--scrim);
     z-index: 49;
   }
   .inspector {
@@ -82,7 +82,7 @@
     display: block;
     position: fixed;
     inset: var(--topbar-h) 0 var(--status-h) 0;
-    background: rgba(0, 0, 0, 0.4);
+    background: var(--scrim);
     z-index: 49;
   }
 
@@ -186,7 +186,7 @@
   button, .icon-btn, .ghost-btn, .tab {
     min-height: 44px;
   }
-  .topbar .icon-btn { min-width: 28px; min-height: 28px; padding: 0.25rem; }
+  .topbar .icon-btn { min-width: 44px; min-height: 44px; padding: 0.25rem; }
   .chapter-card { padding: 0.65rem 0.85rem 0.65rem 0.5rem; }
   .scene-card { padding: 0.45rem 0.7rem 0.45rem 1rem; }
   .ref-row { padding: 0.5rem 1rem; }
@@ -209,7 +209,8 @@
   .conflicts-modal {
     width: 96vw;
   }
-  .diff-cols {
+  .diff-cols,
+  .diff-cols-3 {
     grid-template-columns: 1fr;
   }
 }

@@ -3,19 +3,15 @@
 from __future__ import annotations
 
 import json
+from collections.abc import AsyncIterator
 from pathlib import Path
-from typing import Any, AsyncIterator
+from typing import Any
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
 from scribe.chat.context import ScopeRequest, build_bundle, render_system_prompt
-from scribe.main import app
-
-
-def client() -> TestClient:
-    return TestClient(app)
-
 
 # ---------------- scope builder ----------------
 
@@ -96,11 +92,25 @@ def test_scope_chapter_unknown_slug_raises(sample_project: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "bad_path",
+    ["/etc/passwd", "../outside.md", ".git/config"],
+)
+def test_scope_scene_traversal_rejected(sample_project: Path, bad_path: str) -> None:
+    with pytest.raises(HTTPException) as exc:
+        build_bundle(
+            "example-novel",
+            ScopeRequest(kind="scene", path=bad_path),
+            include_codex=False,
+        )
+    assert exc.value.status_code == 400
+
+
 # ---------------- /scope/preview ----------------
 
 
-def test_scope_preview_returns_estimates(sample_project: Path) -> None:
-    r = client().post(
+def test_scope_preview_returns_estimates(sample_project: Path, client: TestClient) -> None:
+    r = client.post(
         "/api/projects/example-novel/chat/scope/preview",
         json={
             "messages": [],
@@ -117,8 +127,8 @@ def test_scope_preview_returns_estimates(sample_project: Path) -> None:
     assert "Whole project" in data["label"]
 
 
-def test_scope_preview_chapter(sample_project: Path) -> None:
-    r = client().post(
+def test_scope_preview_chapter(sample_project: Path, client: TestClient) -> None:
+    r = client.post(
         "/api/projects/example-novel/chat/scope/preview",
         json={
             "messages": [],
@@ -132,7 +142,9 @@ def test_scope_preview_chapter(sample_project: Path) -> None:
     assert data["codex_included"] is False
 
 
-def test_scope_preview_act_returns_only_assigned_chapter(writing_root: Path) -> None:
+def test_scope_preview_act_returns_only_assigned_chapter(
+    writing_root: Path, client: TestClient
+) -> None:
     proj = writing_root / "acttest"
     (proj / "chapters" / "01_Chapter_01").mkdir(parents=True)
     (proj / "chapters" / "02_Chapter_02").mkdir(parents=True)
@@ -158,7 +170,7 @@ def test_scope_preview_act_returns_only_assigned_chapter(writing_root: Path) -> 
         encoding="utf-8",
     )
 
-    r = client().post(
+    r = client.post(
         "/api/projects/acttest/chat/scope/preview",
         json={
             "messages": [],
@@ -171,12 +183,63 @@ def test_scope_preview_act_returns_only_assigned_chapter(writing_root: Path) -> 
     assert data["section_count"] == 2
 
 
-def test_scope_preview_invalid_kind_returns_400(sample_project: Path) -> None:
-    r = client().post(
+def test_scope_preview_survives_malformed_scene_frontmatter(
+    sample_project: Path, client: TestClient
+) -> None:
+    scene = sample_project / "chapters" / "01_Chapter_01" / "01.md"
+    scene.write_text("---\ntitle: [unclosed\n---\nBody text here.\n", encoding="utf-8")
+    r = client.post(
+        "/api/projects/example-novel/chat/scope/preview",
+        json={
+            "messages": [],
+            "scope": {"kind": "everything"},
+            "include_codex": False,
+        },
+    )
+    assert r.status_code == 200
+
+
+def test_scope_preview_invalid_kind_returns_400(sample_project: Path, client: TestClient) -> None:
+    r = client.post(
         "/api/projects/example-novel/chat/scope/preview",
         json={"messages": [], "scope": {"kind": "act"}, "include_codex": False},
     )
     # missing act number
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ["/etc/passwd", "../outside.md", ".git/config"],
+)
+def test_scope_preview_scene_traversal_rejected(
+    sample_project: Path, bad_path: str, client: TestClient
+) -> None:
+    r = client.post(
+        "/api/projects/example-novel/chat/scope/preview",
+        json={
+            "messages": [],
+            "scope": {"kind": "scene", "path": bad_path},
+            "include_codex": False,
+        },
+    )
+    assert r.status_code == 400
+
+
+@pytest.mark.parametrize(
+    "bad_path",
+    ["/etc/passwd", "../outside.md", ".git/config"],
+)
+def test_stream_scene_traversal_rejected(
+    sample_project: Path, bad_path: str, client: TestClient
+) -> None:
+    r = client.post(
+        "/api/projects/example-novel/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "scope": {"kind": "scene", "path": bad_path},
+        },
+    )
     assert r.status_code == 400
 
 
@@ -216,7 +279,7 @@ class _FakeAsyncClient:
     def stream(self, method: str, url: str, **kwargs: Any) -> _FakeStreamResp:
         return _FakeStreamResp(self._lines, self._status)
 
-    async def get(self, url: str, **kwargs: Any) -> "_FakeGetResp":
+    async def get(self, url: str, **kwargs: Any) -> _FakeGetResp:
         return _FakeGetResp(
             {
                 "object": "list",
@@ -246,14 +309,16 @@ def _patch_orchestrator(monkeypatch: pytest.MonkeyPatch, lines: list[str], statu
     monkeypatch.setattr("scribe.routes.chat.httpx.AsyncClient", factory)
 
 
-def test_stream_relays_orchestrator_chunks(sample_project: Path, monkeypatch) -> None:
+def test_stream_relays_orchestrator_chunks(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     chunks = [
         'data: {"choices":[{"delta":{"content":"Hi"}}]}',
         'data: {"choices":[{"delta":{"content":" there"}}]}',
         "data: [DONE]",
     ]
     _patch_orchestrator(monkeypatch, chunks)
-    with client().stream(
+    with client.stream(
         "POST",
         "/api/projects/example-novel/chat/stream",
         json={
@@ -271,9 +336,11 @@ def test_stream_relays_orchestrator_chunks(sample_project: Path, monkeypatch) ->
     assert "[DONE]" in body
 
 
-def test_stream_relays_orchestrator_error(sample_project: Path, monkeypatch) -> None:
+def test_stream_relays_orchestrator_error(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     _patch_orchestrator(monkeypatch, ["upstream is unhappy"], status=500)
-    with client().stream(
+    with client.stream(
         "POST",
         "/api/projects/example-novel/chat/stream",
         json={
@@ -287,14 +354,16 @@ def test_stream_relays_orchestrator_error(sample_project: Path, monkeypatch) -> 
     assert json.loads(payload)["status"] == 500
 
 
-def test_rewrite_relays_orchestrator_chunks(sample_project: Path, monkeypatch) -> None:
+def test_rewrite_relays_orchestrator_chunks(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     chunks = [
         'data: {"choices":[{"delta":{"content":"Tarn weighed"}}]}',
         'data: {"choices":[{"delta":{"content":" the axe."}}]}',
         "data: [DONE]",
     ]
     _patch_orchestrator(monkeypatch, chunks)
-    with client().stream(
+    with client.stream(
         "POST",
         "/api/projects/example-novel/chat/rewrite",
         json={
@@ -312,26 +381,26 @@ def test_rewrite_relays_orchestrator_chunks(sample_project: Path, monkeypatch) -
     assert "[DONE]" in body
 
 
-def test_rewrite_rejects_empty_selection(sample_project: Path) -> None:
-    r = client().post(
+def test_rewrite_rejects_empty_selection(sample_project: Path, client: TestClient) -> None:
+    r = client.post(
         "/api/projects/example-novel/chat/rewrite",
         json={"selection": "   ", "instruction": "tighten"},
     )
     assert r.status_code == 400
 
 
-def test_rewrite_rejects_empty_instruction(sample_project: Path) -> None:
-    r = client().post(
+def test_rewrite_rejects_empty_instruction(sample_project: Path, client: TestClient) -> None:
+    r = client.post(
         "/api/projects/example-novel/chat/rewrite",
         json={"selection": "Tarn tested his axe balance.", "instruction": ""},
     )
     assert r.status_code == 400
 
 
-def test_models_proxy_returns_cleaned_list(monkeypatch) -> None:
+def test_models_proxy_returns_cleaned_list(monkeypatch, client: TestClient) -> None:
     _patch_orchestrator(monkeypatch, [])
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "")
-    r = client().get("/api/models")
+    r = client.get("/api/models")
     assert r.status_code == 200
     items = r.json()
     ids = [m["id"] for m in items]
@@ -340,10 +409,10 @@ def test_models_proxy_returns_cleaned_list(monkeypatch) -> None:
     assert not any(i.startswith("claude") for i in ids)
 
 
-def test_models_proxy_appends_claude_when_key_set(monkeypatch) -> None:
+def test_models_proxy_appends_claude_when_key_set(monkeypatch, client: TestClient) -> None:
     _patch_orchestrator(monkeypatch, [])
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
-    r = client().get("/api/models")
+    r = client.get("/api/models")
     assert r.status_code == 200
     ids = [m["id"] for m in r.json()]
     assert "claude-opus-4-8" in ids
@@ -446,7 +515,7 @@ def test_anthropic_build_body_drops_system_into_top_level() -> None:
 
 
 def test_stream_routes_to_anthropic_and_translates_text_deltas(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
     lines = [
@@ -470,7 +539,7 @@ def test_stream_routes_to_anthropic_and_translates_text_deltas(
         "",
     ]
     holder = _patch_anthropic(monkeypatch, lines)
-    with client().stream(
+    with client.stream(
         "POST",
         "/api/projects/example-novel/chat/stream",
         json={
@@ -498,7 +567,7 @@ def test_stream_routes_to_anthropic_and_translates_text_deltas(
 
 
 def test_stream_anthropic_surfaces_upstream_error(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
     _patch_anthropic(
@@ -506,7 +575,7 @@ def test_stream_anthropic_surfaces_upstream_error(
         ['{"type":"error","error":{"type":"overloaded","message":"upstream busy"}}'],
         status=529,
     )
-    with client().stream(
+    with client.stream(
         "POST",
         "/api/projects/example-novel/chat/stream",
         json={
@@ -521,11 +590,100 @@ def test_stream_anthropic_surfaces_upstream_error(
     assert json.loads(payload)["status"] == 529
 
 
+def test_stream_anthropic_error_after_text_deltas(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
+    monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
+    lines = [
+        "event: content_block_delta",
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+        "",
+        "event: error",
+        'data: {"type":"error","error":{"type":"overloaded","message":"upstream busy"}}',
+        "",
+    ]
+    _patch_anthropic(monkeypatch, lines)
+    with client.stream(
+        "POST",
+        "/api/projects/example-novel/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "scope": {"kind": "everything"},
+            "model": "claude-opus-4-7",
+        },
+    ) as r:
+        body = b"".join(r.iter_bytes()).decode()
+    assert '"content": "Hello"' in body
+    assert "event: error" in body
+    assert body.index('"content": "Hello"') < body.index("event: error")
+    # broken response — no trailing [DONE] after an error
+    assert "[DONE]" not in body
+
+
+def test_stream_anthropic_flushes_trailing_text_without_message_stop(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
+    monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
+    lines = [
+        "event: content_block_delta",
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Wow<t"}}',
+        "",
+        # stream just ends here — no message_stop, no error
+    ]
+    _patch_anthropic(monkeypatch, lines)
+    with client.stream(
+        "POST",
+        "/api/projects/example-novel/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "scope": {"kind": "everything"},
+            "model": "claude-opus-4-7",
+        },
+    ) as r:
+        body = b"".join(r.iter_bytes()).decode()
+    assert '"content": "Wow"' in body
+    assert '"content": "<t"' in body
+    assert "[DONE]" in body
+
+
+def test_stream_anthropic_skips_garbage_data_frames(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
+    monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
+    lines = [
+        "event: content_block_delta",
+        "data: not-json-at-all",
+        "",
+        "event: content_block_delta",
+        'data: {"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"Hello"}}',
+        "",
+        "data: {also not valid json",
+        "",
+        "event: message_stop",
+        'data: {"type":"message_stop"}',
+        "",
+    ]
+    _patch_anthropic(monkeypatch, lines)
+    with client.stream(
+        "POST",
+        "/api/projects/example-novel/chat/stream",
+        json={
+            "messages": [{"role": "user", "content": "hi"}],
+            "scope": {"kind": "everything"},
+            "model": "claude-opus-4-7",
+        },
+    ) as r:
+        assert r.status_code == 200
+        body = b"".join(r.iter_bytes()).decode()
+    assert '"content": "Hello"' in body
+    assert "[DONE]" in body
+
+
 def test_stream_503_when_claude_requested_without_key(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "")
-    r = client().post(
+    r = client.post(
         "/api/projects/example-novel/chat/stream",
         json={
             "messages": [{"role": "user", "content": "hi"}],
@@ -597,7 +755,31 @@ def test_think_filter_flush_partial_non_tag():
     assert "<b>" in result
 
 
-def test_rewrite_routes_to_anthropic(sample_project: Path, monkeypatch) -> None:
+def test_think_filter_flush_emits_held_tag_prefix():
+    from scribe.chat.anthropic import ThinkBlockFilter
+
+    f = ThinkBlockFilter()
+    assert f.feed("a<t") == "a"
+    assert f.flush() == "<t"
+
+
+def test_think_filter_flush_drops_unterminated_think_block():
+    from scribe.chat.anthropic import ThinkBlockFilter
+
+    f = ThinkBlockFilter()
+    assert f.feed("Hello <think>secret") == "Hello "
+    assert f.flush() == ""
+
+
+def test_think_filter_flush_noop_when_buffer_empty():
+    from scribe.chat.anthropic import ThinkBlockFilter
+
+    f = ThinkBlockFilter()
+    assert f.feed("Hello world") == "Hello world"
+    assert f.flush() == ""
+
+
+def test_rewrite_routes_to_anthropic(sample_project: Path, monkeypatch, client: TestClient) -> None:
     monkeypatch.setattr("scribe.config.ANTHROPIC_API_KEY", "sk-ant-test")
     lines = [
         "event: content_block_delta",
@@ -608,7 +790,7 @@ def test_rewrite_routes_to_anthropic(sample_project: Path, monkeypatch) -> None:
         "",
     ]
     _patch_anthropic(monkeypatch, lines)
-    with client().stream(
+    with client.stream(
         "POST",
         "/api/projects/example-novel/chat/rewrite",
         json={
@@ -657,7 +839,9 @@ def _patch_summarize(monkeypatch: pytest.MonkeyPatch, data: dict, status: int = 
     monkeypatch.setattr("scribe.routes.chat.httpx.AsyncClient", factory)
 
 
-def test_summarize_orchestrator_strips_think_blocks(sample_project: Path, monkeypatch) -> None:
+def test_summarize_orchestrator_strips_think_blocks(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     _patch_summarize(
         monkeypatch,
         {
@@ -670,7 +854,7 @@ def test_summarize_orchestrator_strips_think_blocks(sample_project: Path, monkey
             ]
         },
     )
-    r = client().post(
+    r = client.post(
         "/api/projects/example-novel/chat/summarize",
         json={"path": "chapters/11_Chapter_11/02.md"},
     )

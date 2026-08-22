@@ -4,7 +4,7 @@ import { useOnline } from '../../lib/syncEngine';
 import { countWords } from '../../lib/words';
 import { ModelEntry, streamRewrite } from '../../lib/api';
 import { readStream } from '../chat/streaming';
-import { diffStats, diffWords, DiffSeg } from './diff';
+import { diffStats, diffWords, DiffSeg } from '../../lib/diff';
 
 export interface RewriteDialogProps {
   slug: string;

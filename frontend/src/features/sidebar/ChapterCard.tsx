@@ -17,8 +17,9 @@ import { syncEngine } from '../../lib/syncEngine';
 import { isOfflinePath } from '../../lib/offlineTree';
 import { ActGroup, SIDEBAR_ACT_ZONE_PREFIX, actZoneId, statusClass } from '../../lib/chapterDrag';
 import { toast } from '../../app/Toast';
+import { onActivate } from '../../lib/a11y';
 
-export const actWordCount = (g: ActGroup) =>
+const actWordCount = (g: ActGroup) =>
   g.chapters.reduce((acc, c) => acc + c.word_count, 0);
 
 const aggregateStatus = (chapter: ChapterEntry): string => {
@@ -220,6 +221,7 @@ function ChapterCard({
   sortable?: SortableProps;
 }) {
   const hasScenes = chapter.scenes.length > 0;
+  const pov = aggregatePov(chapter);
   const isActive =
     activePath === chapter.meta_path ||
     chapter.scenes.some((s) => s.path === activePath);
@@ -274,6 +276,9 @@ function ChapterCard({
         ref={cardRef}
         className={`chapter-card${isActive ? ' active' : ''}`}
         onClick={() => onSelect(cardClickTarget)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={onActivate(() => onSelect(cardClickTarget))}
       >
         <span
           className="row-grip"
@@ -324,7 +329,7 @@ function ChapterCard({
                 {chapter.scenes.length === 1 ? '' : 's'}
               </span>
             )}
-            {aggregatePov(chapter) && <span>· {aggregatePov(chapter)}</span>}
+            {pov && <span>· {pov}</span>}
           </div>
         </div>
         <div className="row-actions">
@@ -403,6 +408,9 @@ function SortableSceneRow(props: {
       <div
         className={`scene-card${props.scene.path === props.activePath ? ' active' : ''}`}
         onClick={() => props.onSelect(props.scene.path)}
+        role="button"
+        tabIndex={0}
+        onKeyDown={onActivate(() => props.onSelect(props.scene.path))}
       >
         <div className="row-head">
           <span className="row-grip scene-grip" {...attributes} {...listeners}>⋮</span>
@@ -414,7 +422,7 @@ function SortableSceneRow(props: {
           <span className="chapter-title">{props.scene.title || `Scene ${props.scene.scene ?? ''}`}</span>
         </div>
         <div className="row-meta" style={{ paddingLeft: '2.5em' }}>
-          <span className={`status-dot ${props.scene.status || 'draft'}`} />
+          <span className={`status-dot ${statusClass(props.scene.status)}`} />
           <span>{props.scene.word_count.toLocaleString()}w</span>
           {props.scene.pov && <span>· {props.scene.pov}</span>}
         </div>

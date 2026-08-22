@@ -8,9 +8,9 @@ import { ActsEditor } from './ActsEditor';
 import { CategoriesEditor } from './CategoriesEditor';
 import { Inspector } from './Inspector';
 import { ChapterFlow, ChapterFlowHandle, SceneSaveState } from './ChapterFlow';
-import { Act, Category, ChapterEntry, FileGet, ModelEntry, listModels, updateProject } from '../../lib/api';
-import { SAVE_DEBOUNCE_MS, syncEngine } from '../../lib/syncEngine';
-import { countWords } from '../../lib/words';
+import { Act, Category, ChapterEntry, ModelEntry, listModels, updateProject } from '../../lib/api';
+import { syncEngine } from '../../lib/syncEngine';
+import { GetEditorBuffer, editorHoldsUnsaved, useFileEditor } from '../../lib/useFileEditor';
 import { toast } from '../../app/Toast';
 import { ProjectContext } from './ProjectView';
 
@@ -49,7 +49,9 @@ export function WriteView() {
   useEffect(() => {
     const handler = () => {
       const snap = syncEngine.getSnapshot();
-      if (snap.pendingCount > 0 || snap.structureOpsCount > 0) {
+      const activeStructureOps = snap.structureOpsCount - snap.stuckOpsCount;
+      const activePending = snap.pendingCount - snap.stuckPendingCount;
+      if (activePending > 0 || activeStructureOps > 0) {
         toast('Reconnecting…');
       }
     };
@@ -57,13 +59,6 @@ export function WriteView() {
     return () => window.removeEventListener('online', handler);
   }, []);
 
-  const [file, setFile] = useState<FileGet | null>(null);
-  const [body, setBody] = useState('');
-  const [frontmatter, setFrontmatter] = useState<Record<string, unknown>>({});
-  const [saveState, setSaveState] = useState<
-    'clean' | 'dirty' | 'saving' | 'saved' | 'error'
-  >('clean');
-  const [error, setError] = useState<string | null>(null);
   const [showActs, setShowActs] = useState(false);
   const [showCategories, setShowCategories] = useState(false);
   const [rewriteSel, setRewriteSel] = useState<SelectionInfo | null>(null);
@@ -82,13 +77,9 @@ export function WriteView() {
   }, [helperModel]);
   const editorRef = useRef<EditorHandle>(null);
   const flowRef = useRef<ChapterFlowHandle>(null);
-  const saveTimer = useRef<number | null>(null);
 
   const flowChapter = useMemo<ChapterEntry | null>(() => {
     if (!tree || !activePath) return null;
-    // Any scene path routes through ChapterFlow, regardless of how many
-    // siblings the chapter has. One-scene and multi-scene chapters share
-    // the same view so we don't maintain two layouts.
     const ch = tree.chapters.find((c) =>
       c.scenes.some((s) => s.path === activePath),
     );
@@ -97,15 +88,45 @@ export function WriteView() {
   const inFlowMode = flowChapter !== null;
   const [flowSaveState, setFlowSaveState] = useState<SceneSaveState>('clean');
   const [flowWordCount, setFlowWordCount] = useState<number>(0);
+  // ChapterFlow owns a per-scene buffer registry and exposes a path lookup so
+  // the conflict modal can lift ANY mounted scene's buffer as the Editor
+  // column — not just the one the user last clicked into.
+  const flowLookupRef = useRef<GetEditorBuffer | null>(null);
+  const onFlowBufferLookup = useCallback(
+    (lookup: GetEditorBuffer) => {
+      flowLookupRef.current = lookup;
+    },
+    [],
+  );
 
-  const bodyRef = useRef(body);
-  bodyRef.current = body;
-  const fmRef = useRef(frontmatter);
-  fmRef.current = frontmatter;
-  const fileRef = useRef(file);
-  fileRef.current = file;
+  const {
+    file,
+    body,
+    frontmatter,
+    setFrontmatter,
+    saveState,
+    error,
+    wordCount: liveWordCount,
+    onBodyChange,
+    scheduleSave,
+    getBuffer,
+  } = useFileEditor({
+    slug,
+    path: inFlowMode ? null : activePath,
+    onSaved: refreshTree,
+  });
 
-  const liveWordCount = useMemo(() => countWords(body), [body]);
+  // Unified lookup for the conflict modal: in flow mode delegate to
+  // ChapterFlow's registry; otherwise contribute this view's single editor,
+  // gated on it holding unsaved changes for the requested path.
+  const getEditorBuffer = useCallback<GetEditorBuffer>(
+    (queryPath) => {
+      if (inFlowMode) return flowLookupRef.current?.(queryPath) ?? null;
+      if (queryPath !== activePath || !editorHoldsUnsaved(saveState)) return null;
+      return getBuffer();
+    },
+    [inFlowMode, activePath, saveState, getBuffer],
+  );
 
   const codex = useMemo<CodexEntry[]>(() => {
     if (!tree) return [];
@@ -179,13 +200,13 @@ export function WriteView() {
     return null;
   }, [tree, activePath]);
 
-  // Push state up to ProjectView for the status bar / topbar / palette.
   useEffect(() => {
     setHeader({
       activePath,
       activeTitle,
       liveWordCount: inFlowMode ? flowWordCount : liveWordCount,
       saveState: inFlowMode ? flowSaveState : saveState,
+      getEditorBuffer,
       typewriter,
       setTypewriter,
       sidebarCollapsed,
@@ -201,27 +222,12 @@ export function WriteView() {
     inFlowMode,
     flowSaveState,
     flowWordCount,
+    getEditorBuffer,
     typewriter,
     sidebarCollapsed,
     inspectorCollapsed,
     setHeader,
   ]);
-
-  useEffect(() => {
-    if (!slug || !activePath) return;
-    if (inFlowMode) return; // ChapterFlow loads scenes itself
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    setFile(null);
-    setSaveState('clean');
-    syncEngine
-      .getFile(slug, activePath)
-      .then((f) => {
-        setFile(f);
-        setBody(f.body);
-        setFrontmatter(f.frontmatter);
-      })
-      .catch((e) => setError(String(e)));
-  }, [slug, activePath, inFlowMode]);
 
   useEffect(() => {
     if (!activePath || !tree) return;
@@ -233,48 +239,8 @@ export function WriteView() {
       tree.categories.some((c) => c.entries.some((r) => r.path === activePath));
     if (!exists) {
       setActivePath(null);
-      setFile(null);
     }
   }, [tree, activePath, setActivePath]);
-
-  const save = useCallback(async () => {
-    if (!slug || !activePath) return;
-    const f = fileRef.current;
-    if (!f) return;
-    setSaveState('saving');
-    try {
-      await syncEngine.saveFile(
-        slug,
-        activePath,
-        bodyRef.current,
-        fmRef.current,
-        f.etag,
-      );
-      setFile({
-        path: activePath,
-        body: bodyRef.current,
-        frontmatter: fmRef.current,
-        etag: f.etag,
-        word_count: countWords(bodyRef.current),
-      });
-      setSaveState('saved');
-      refreshTree();
-    } catch (e) {
-      setError(String(e));
-      setSaveState('error');
-    }
-  }, [slug, activePath, refreshTree]);
-
-  const scheduleSave = useCallback(() => {
-    setSaveState('dirty');
-    if (saveTimer.current) window.clearTimeout(saveTimer.current);
-    saveTimer.current = window.setTimeout(save, SAVE_DEBOUNCE_MS);
-  }, [save]);
-
-  const onBodyChange = (next: string) => {
-    setBody(next);
-    if (fileRef.current && next !== fileRef.current.body) scheduleSave();
-  };
 
   const onFrontmatterChange = (next: Record<string, unknown>) => {
     setFrontmatter(next);
@@ -336,7 +302,6 @@ export function WriteView() {
                 ref={flowRef}
                 slug={slug}
                 chapter={flowChapter}
-                tree={tree}
                 activePath={activePath}
                 onActivePath={setActivePath}
                 onSelect={setActivePath}
@@ -344,6 +309,7 @@ export function WriteView() {
                 codex={codex}
                 onSaveStateChange={setFlowSaveState}
                 onLiveWordCount={setFlowWordCount}
+                onBufferLookup={onFlowBufferLookup}
                 onRequestRewrite={requestRewrite}
                 models={models}
                 helperModel={helperModel}
@@ -417,6 +383,7 @@ export function WriteView() {
           initial={tree.categories.map((c) => ({ name: c.name, folder: c.folder, codex: c.codex }))}
           onSave={async (categories: Category[]) => {
             await updateProject(slug, { categories });
+            await syncEngine.getTree(slug, true);
             refreshTree();
           }}
           onClose={() => setShowCategories(false)}
@@ -425,4 +392,3 @@ export function WriteView() {
     </div>
   );
 }
-

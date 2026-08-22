@@ -25,7 +25,7 @@ pytest -q                            # full suite
 pytest tests/test_foo.py::test_bar   # single test while iterating
 ```
 
-Tests use `tmp_path`-based project trees — no filesystem mocking. The backend test stage also runs inside the Docker build, so a failing test blocks the image from being built.
+Tests use `tmp_path`-based project trees, with no filesystem mocking. The backend test stage also runs inside the Docker build, so a failing test blocks the image from being built.
 
 ## Frontend
 
@@ -41,7 +41,7 @@ npm run build                        # production build
 ```bash
 cd frontend
 npx vitest run                       # full suite
-npx vitest run src/lib/syncEngine    # single file
+npx vitest run src/lib/__tests__/syncEngine.test.ts   # single file
 ```
 
 Frontend tests use vitest + fake-indexeddb.
@@ -51,10 +51,11 @@ Frontend tests use vitest + fake-indexeddb.
 | Variable | Default | What it does |
 |----------|---------|-------------|
 | `WRITING_ROOT` | `/data/writing` | Where your novel directories live |
-| `APPDATA_ROOT` | `/data/appdata` | App data (git config, RAG recipes) |
+| `APPDATA_ROOT` | `/data/appdata` | App state that isn't novel content, currently per-novel review sessions |
 | `ORCHESTRATOR_URL` | `http://localhost:11435` | OpenAI-compatible LLM endpoint for chat and rewrite |
 | `ANTHROPIC_API_KEY` | unset | Enables Claude models in the model picker |
 | `QDRANT_URL` | unset | Qdrant endpoint for RAG queries |
+| `QDRANT_API_KEY` | unset | API key for the Qdrant endpoint, if it requires auth |
 | `EMBED_URL` | unset | Embedding server for RAG queries |
 | `PORT` | `3030` | Port the backend listens on |
 | `STATIC_ROOT` | `/app/static` | Where the built frontend assets are served from |
@@ -68,6 +69,10 @@ Frontend tests use vitest + fake-indexeddb.
 | `RAG_HOST_WRITING_ROOT` | unset | Host-side path to the writing root, for tooling that runs outside the container |
 | `SCRIBE_AUTOCOMMIT_DISABLED` | unset | Set to `1` to disable the automatic git commit scheduler |
 | `AUTOCOMMIT_INTERVAL_MIN` | `10` | Minutes between automatic git commits |
+| `ALERT_WEBHOOK_URL` | unset | Webhook fired when an autocommit fails (throttled to one per project per hour) |
+| `ALERT_WEBHOOK_TOKEN` | unset | Optional Bearer token for the alert webhook |
+| `ALERT_WEBHOOK_STYLE` | `json` | Alert payload style: `json` (generic `{title, message}`) or `ntfy` |
+| `REVIEW_SESSION_TTL_DAYS` | `180` | Default lifetime of a review share token; each session's expiry is editable in the review UI |
 
 The autocommit scheduler embeds `FORGEJO_TOKEN` directly in each novel's `origin` remote URL, so the token ends up stored in plaintext in that novel's `.git/config`, not just in the process environment. Scope it accordingly (per-repo push access, not admin).
 
@@ -82,24 +87,26 @@ docker run -d \
   scribe
 ```
 
-The Dockerfile is multi-stage: a frontend build stage, then a backend runtime stage. A dedicated test stage runs pytest inside the build — the image won't build if any test fails.
+The Dockerfile is multi-stage: a frontend build stage, then a backend runtime stage. A dedicated test stage runs pytest inside the build. The image won't build if any test fails.
 
-For production, point your reverse proxy at port 3030. Mount two volumes: one for your writing directory (novel files) and one for app data (git config, RAG recipes). Both paths are configurable via the environment variables above.
+For production, point your reverse proxy at port 3030. Mount two volumes: one for your writing directory (novel files) and one for app data (review sessions). Both paths are configurable via the environment variables above.
 
-Scribe has no external database — all state is on the filesystem. Back up the two mounted volumes and you've backed up everything.
+Scribe has no external database: all state is on the filesystem. Back up the two mounted volumes and you've backed up everything.
 
 ## Project layout
 
 ```
-backend/    FastAPI + Python 3.12 (GitPython, APScheduler, watchdog, python-frontmatter)
+backend/    FastAPI + Python 3.12 (GitPython, APScheduler, python-frontmatter)
 frontend/   React 18 + Vite + TypeScript + CodeMirror 6 + Dexie + cmdk
-docs/       ARCHITECTURE / DESIGN / this file
+scripts/    dev-deploy + sync-to-public
+docs/       ARCHITECTURE / DESIGN / this file / NEXTSTEPS
 Dockerfile  multi-stage: frontend build → backend runtime
+.woodpecker/deploy.yml    CI: build → registry → ssh deploy to localhost
 ```
 
 ## Contributing
 
-The codebase is split cleanly between backend (Python) and frontend (TypeScript). Both can run independently in dev mode — the Vite dev server proxies API requests to the backend.
+The codebase is split cleanly between backend (Python) and frontend (TypeScript). Both can run independently in dev mode: the Vite dev server proxies API requests to the backend.
 
 Before submitting changes:
 
@@ -111,5 +118,6 @@ The Docker build runs backend tests as a build stage, so anything that passes lo
 
 ## Further reading
 
-- [ARCHITECTURE.md](ARCHITECTURE.md) — system design, data model, module layout, request flow
-- [DESIGN.md](DESIGN.md) — why it's built this way, each trade-off explained
+- [ARCHITECTURE.md](ARCHITECTURE.md): system design, data model, module layout, request flow
+- [DESIGN.md](DESIGN.md): why it's built this way, each trade-off explained
+- [NEXTSTEPS.md](NEXTSTEPS.md): candidate work and open threads

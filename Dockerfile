@@ -6,6 +6,7 @@ WORKDIR /work
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci
 COPY frontend/ ./
+RUN npm run lint
 RUN npm run test
 RUN npm run build
 

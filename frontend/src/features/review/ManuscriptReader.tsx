@@ -1,6 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import DOMPurify from 'dompurify';
 import type { Manuscript, ReviewComment, TextAnchor } from '../../lib/api';
-import { addComment, getComments, getManuscript, resolveComment } from '../../lib/api';
+import {
+  addComment,
+  addSessionComment,
+  getComments,
+  getManuscript,
+  getSessionComments,
+  getSessionManuscript,
+  resolveComment,
+  resolveSessionComment,
+} from '../../lib/api';
+import { toast } from '../../app/Toast';
 import { CommentRail } from './CommentRail';
 import { anchorFromSelection, highlightAnchors } from './anchoring';
 
@@ -8,9 +19,11 @@ interface Props {
   token: string;
   isAuthor: boolean;
   reviewerName: string;
+  /** Owner-scoped data source: reads/resolves work regardless of session active state. */
+  ownerSession?: { slug: string; sessionId: string };
 }
 
-export function ManuscriptReader({ token, isAuthor, reviewerName }: Props) {
+export function ManuscriptReader({ token, isAuthor, reviewerName, ownerSession }: Props) {
   const [manuscript, setManuscript] = useState<Manuscript | null>(null);
   const [comments, setComments] = useState<ReviewComment[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -20,11 +33,19 @@ export function ManuscriptReader({ token, isAuthor, reviewerName }: Props) {
   const [composerText, setComposerText] = useState('');
   const [composerPos, setComposerPos] = useState<{ top: number; left: number } | null>(null);
   const manuscriptRef = useRef<HTMLDivElement>(null);
+  const ownerSlug = ownerSession?.slug;
+  const ownerSessionId = ownerSession?.sessionId;
 
   useEffect(() => {
-    getManuscript(token).then(setManuscript).catch((e) => setError(String(e)));
-    getComments(token).then(setComments).catch((e) => setError(String(e)));
-  }, [token]);
+    const manuscriptFetch = ownerSlug && ownerSessionId
+      ? getSessionManuscript(ownerSlug, ownerSessionId)
+      : getManuscript(token);
+    const commentsFetch = ownerSlug && ownerSessionId
+      ? getSessionComments(ownerSlug, ownerSessionId)
+      : getComments(token);
+    manuscriptFetch.then(setManuscript).catch((e) => setError(String(e)));
+    commentsFetch.then(setComments).catch((e) => setError(String(e)));
+  }, [token, ownerSlug, ownerSessionId]);
 
   useEffect(() => {
     if (!manuscriptRef.current || !manuscript) return;
@@ -37,10 +58,16 @@ export function ManuscriptReader({ token, isAuthor, reviewerName }: Props) {
         parent.normalize();
       }
     });
-    const anchors = comments
-      .filter((c) => !c.resolved)
-      .map((c) => ({ id: c.id, anchor: c.anchor }));
-    highlightAnchors(el, anchors);
+    const unresolved = comments.filter((c) => !c.resolved);
+    // Match per scene, not across the whole manuscript, so an identical phrase
+    // in another scene can't steal a highlight (R5).
+    el.querySelectorAll<HTMLElement>('[data-scene]').forEach((sceneEl) => {
+      const scenePath = sceneEl.getAttribute('data-scene');
+      const anchors = unresolved
+        .filter((c) => c.scene === scenePath)
+        .map((c) => ({ id: c.id, anchor: c.anchor }));
+      if (anchors.length) highlightAnchors(sceneEl, anchors);
+    });
   }, [comments, manuscript]);
 
   const handleTextSelect = useCallback(() => {
@@ -49,12 +76,12 @@ export function ManuscriptReader({ token, isAuthor, reviewerName }: Props) {
       setShowComposer(false);
       return;
     }
-    const anchor = anchorFromSelection(manuscriptRef.current, sel);
-    if (!anchor) return;
     const sceneEl = (sel.anchorNode as HTMLElement)?.closest?.('[data-scene]')
       ?? sel.anchorNode?.parentElement?.closest?.('[data-scene]');
     const scenePath = sceneEl?.getAttribute('data-scene');
-    if (!scenePath) return;
+    if (!sceneEl || !scenePath) return;
+    const anchor = anchorFromSelection(sceneEl as HTMLElement, sel);
+    if (!anchor) return;
     const range = sel.getRangeAt(0);
     const rect = range.getBoundingClientRect();
     setComposerPos({ top: rect.bottom + window.scrollY + 8, left: rect.left + window.scrollX });
@@ -65,20 +92,29 @@ export function ManuscriptReader({ token, isAuthor, reviewerName }: Props) {
 
   const submitComment = async () => {
     if (!composerAnchor || !composerText.trim()) return;
-    const comment = await addComment(token, {
-      scene: composerAnchor.scene,
-      anchor: composerAnchor.anchor,
-      text: composerText.trim(),
-    }, reviewerName);
-    setComments((prev) => [...prev, comment]);
-    setShowComposer(false);
-    setComposerText('');
-    window.getSelection()?.removeAllRanges();
+    try {
+      const payload = { scene: composerAnchor.scene, anchor: composerAnchor.anchor, text: composerText.trim() };
+      const comment = ownerSession
+        ? await addSessionComment(ownerSession.slug, ownerSession.sessionId, payload, reviewerName)
+        : await addComment(token, payload, reviewerName);
+      setComments((prev) => [...prev, comment]);
+      setShowComposer(false);
+      setComposerText('');
+      window.getSelection()?.removeAllRanges();
+    } catch {
+      toast('Failed to post comment', 'error');
+    }
   };
 
   const handleResolve = async (id: string, resolved: boolean) => {
-    const updated = await resolveComment(token, id, resolved);
-    setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    try {
+      const updated = ownerSession
+        ? await resolveSessionComment(ownerSession.slug, ownerSession.sessionId, id, resolved)
+        : await resolveComment(token, id, resolved);
+      setComments((prev) => prev.map((c) => (c.id === id ? updated : c)));
+    } catch {
+      toast('Failed to update comment', 'error');
+    }
   };
 
   const scrollToComment = (id: string) => {
@@ -113,7 +149,7 @@ export function ManuscriptReader({ token, isAuthor, reviewerName }: Props) {
             {ch.scenes.map((scene, i) => (
               <div key={scene.path} data-scene={scene.path}>
                 {i > 0 && <hr className="scene-break" />}
-                <div dangerouslySetInnerHTML={{ __html: scene.html }} />
+                <div dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(scene.html) }} />
               </div>
             ))}
           </article>

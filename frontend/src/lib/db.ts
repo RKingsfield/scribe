@@ -1,5 +1,15 @@
 import Dexie, { Table } from 'dexie';
 import type { ChatScope, ProjectTree } from './api';
+import type {
+  NewChapterPayload,
+  NewScenePayload,
+  NewCategoryEntryPayload,
+  DeleteChapterPayload,
+  DeleteScenePayload,
+  DeleteCategoryEntryPayload,
+  ReorderPayload,
+  MoveScenePayload,
+} from './types';
 
 interface CachedFile {
   // composite key "<slug>::<path>"
@@ -12,7 +22,10 @@ interface CachedFile {
   cachedAt: number;
 }
 
-interface PendingWrite {
+// Placeholder etag on cache rows for files created offline — never a real server etag.
+export const OFFLINE_ETAG = 'offline';
+
+export interface PendingWrite {
   id?: number;
   slug: string;
   path: string;
@@ -22,9 +35,12 @@ interface PendingWrite {
   queuedAt: number;
   attempts: number;
   lastError?: string;
+  // Set when a flush attempt fails permanently — parked so the rest of the
+  // queue can keep draining instead of head-of-line blocking.
+  stuckAt?: number;
 }
 
-export interface ConflictMarker {
+interface ConflictMarker {
   // composite key "<slug>::<conflictPath>"
   key: string;
   slug: string;
@@ -46,16 +62,28 @@ interface CachedTree {
   cachedAt: number;
 }
 
-interface StructureOp {
+interface StructureOpBase {
   id?: number;
   slug: string;
-  op: 'new-chapter' | 'new-scene' | 'new-category-entry' | 'delete-chapter' | 'reorder' | 'move-scene';
-  payload: Record<string, unknown>;
   tempId: string;
   queuedAt: number;
   attempts: number;
   lastError?: string;
+  // Set when a replay attempt fails permanently — parked so the rest of the
+  // queue can keep draining instead of head-of-line blocking.
+  stuckAt?: number;
 }
+
+export type StructureOp = StructureOpBase & (
+  | { op: 'new-chapter'; payload: NewChapterPayload }
+  | { op: 'new-scene'; payload: NewScenePayload }
+  | { op: 'new-category-entry'; payload: NewCategoryEntryPayload }
+  | { op: 'delete-chapter'; payload: DeleteChapterPayload }
+  | { op: 'delete-scene'; payload: DeleteScenePayload }
+  | { op: 'delete-category-entry'; payload: DeleteCategoryEntryPayload }
+  | { op: 'reorder'; payload: ReorderPayload }
+  | { op: 'move-scene'; payload: MoveScenePayload }
+);
 
 export interface ChatTurn {
   role: 'user' | 'assistant' | 'system';

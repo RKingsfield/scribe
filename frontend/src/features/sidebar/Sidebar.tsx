@@ -130,7 +130,8 @@ export function Sidebar({
           });
         }
         onTreeChanged();
-      } catch {
+      } catch (err) {
+        toast(`Reorder failed: ${err}`, 'error');
         setSceneOverrides({});
       }
       return;

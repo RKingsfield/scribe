@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { relativeTime } from '../../lib/format';
 import { useOnline } from '../../lib/syncEngine';
 import { X } from 'lucide-react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
@@ -145,6 +146,7 @@ export function ChatView() {
     abortRef.current = ctrl;
 
     let acc = '';
+    let errorText: string | null = null;
     let meta: { scope_label: string; estimated_tokens: number } | undefined;
     try {
       const r = await streamChat(
@@ -160,18 +162,25 @@ export function ChatView() {
           acc += evt.content;
           setStreaming({ content: acc, meta });
         } else if (evt.type === 'error') {
-          setStreamError(`${evt.status}: ${evt.body}`);
+          errorText = `${evt.status}: ${evt.body}`;
+          setStreamError(errorText);
           break;
         } else if (evt.type === 'done') {
           break;
         }
       }
-      await updateLastTurn(threadId, { content: acc, ts: Date.now() });
+      // Don't persist a blank placeholder turn — the error is already surfaced via streamError.
+      await updateLastTurn(threadId, {
+        content: acc || (errorText ? `[error: ${errorText}]` : ''),
+        ts: Date.now(),
+      });
     } catch (e) {
       if ((e as { name?: string }).name === 'AbortError') {
         await updateLastTurn(threadId, { content: acc + '\n\n[interrupted]' });
       } else {
-        setStreamError(String(e));
+        const msg = String(e);
+        setStreamError(msg);
+        await updateLastTurn(threadId, { content: acc || `[error: ${msg}]`, ts: Date.now() });
       }
     } finally {
       abortRef.current = null;
@@ -224,14 +233,22 @@ export function ChatView() {
         <div className="chat-history">
           {threads.length === 0 && <div className="dim small">No threads yet.</div>}
           {threads.map((t) => (
-            <button
+            <div
               key={t.id}
+              role="button"
+              tabIndex={0}
               className={`chat-history-row${t.id === activeId ? ' active' : ''}`}
               onClick={() => setActiveId(t.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  setActiveId(t.id);
+                }
+              }}
             >
               <div className="chat-history-title">{t.title}</div>
               <div className="chat-history-meta">
-                {scopeLabel(t.scope, tree)} · {fmtAge(t.updatedAt)}
+                {scopeLabel(t.scope, tree)} · {relativeTime(t.updatedAt)}
               </div>
               <button
                 className="chat-history-del"
@@ -239,11 +256,12 @@ export function ChatView() {
                   e.stopPropagation();
                   if (window.confirm('Delete this thread?')) removeThread(t.id);
                 }}
+                onKeyDown={(e) => e.stopPropagation()}
                 title="Delete"
               >
                 <X size={14} />
               </button>
-            </button>
+            </div>
           ))}
         </div>
       </aside>
@@ -307,10 +325,3 @@ function scopeLabel(scope: ChatScope, tree: ProjectContext['tree']): string {
   return '—';
 }
 
-function fmtAge(ts: number): string {
-  const d = Date.now() - ts;
-  if (d < 60_000) return 'just now';
-  if (d < 3_600_000) return `${Math.floor(d / 60_000)}m ago`;
-  if (d < 86_400_000) return `${Math.floor(d / 3_600_000)}h ago`;
-  return `${Math.floor(d / 86_400_000)}d ago`;
-}

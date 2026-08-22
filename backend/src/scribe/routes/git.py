@@ -13,6 +13,7 @@ class CommitResult(BaseModel):
     pushed: bool = False
     push_error: str | None = None
     status: str | None = None
+    error: str | None = None
 
 
 class CommitRequest(BaseModel):

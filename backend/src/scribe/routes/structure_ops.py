@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, TypedDict
 
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
@@ -24,6 +26,8 @@ from ..storage.helpers import (
     slugify,
 )
 
+log = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/projects/{slug}", tags=["structure"])
 
 
@@ -37,11 +41,38 @@ class NewChapterRequest(BaseModel):
 
 class NewSceneRequest(BaseModel):
     title: str | None = None
+    order: float | None = None  # dragged position; auto (float(n)) when None
 
 
 class NewSimpleEntryRequest(BaseModel):
     title: str
     slug: str | None = None
+
+
+class NewChapterResult(TypedDict):
+    slug: str
+    chapter: int | None
+    interlude: int | None
+    kind: str
+    position: int
+    path: str
+    meta_path: str
+    first_scene_path: str
+
+
+class NewSceneResult(TypedDict):
+    scene: int
+    path: str
+
+
+class NewEntryResult(TypedDict):
+    path: str
+    title: str
+
+
+class ReorderResult(TypedDict):
+    updated: list[str]
+    count: int
 
 
 def _validate_slug(s: str) -> None:
@@ -75,7 +106,7 @@ def _scan_existing_chapters(chapters_dir: Path) -> tuple[int, int, int, dict[str
         if meta_fp.is_file():
             try:
                 meta, _body = fm.parse(meta_fp.read_text(encoding="utf-8"))
-            except (OSError, ValueError):
+            except (OSError, ValueError, yaml.YAMLError):
                 meta = {}
             kind = classify_chapter_kind(meta)
             if kind == "chapter":
@@ -146,7 +177,7 @@ def _write_chapter_files(
     ordinal: int,
     position: int,
     body: NewChapterRequest,
-) -> dict[str, Any]:
+) -> NewChapterResult:
     chapter_dir.mkdir(parents=True, exist_ok=True)
 
     if body.kind == "chapter":
@@ -186,7 +217,7 @@ def _write_chapter_files(
 
 
 @router.post("/chapter/new")
-def new_chapter(slug: str, body: NewChapterRequest) -> dict[str, Any]:
+def new_chapter(slug: str, body: NewChapterRequest) -> NewChapterResult:
     root = paths.project_root(slug)
     chapters_dir = root / "chapters"
     chapters_dir.mkdir(parents=True, exist_ok=True)
@@ -208,7 +239,7 @@ def delete_chapter(slug: str, chapter_slug: str) -> None:
 
 
 @router.post("/chapter/{chapter_slug}/scene/new")
-def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict[str, Any]:
+def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> NewSceneResult:
     _validate_slug(chapter_slug)
     root = paths.project_root(slug)
     chapter_dir = root / "chapters" / chapter_slug
@@ -216,7 +247,7 @@ def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict[str, 
         raise HTTPException(404, f"Chapter not found: {chapter_slug}")
     n = next_scene_number(chapter_dir)
     filename = f"{n:02d}.md"
-    scene_meta: dict[str, Any] = {"scene": n, "order": float(n)}
+    scene_meta: dict[str, Any] = {"scene": n, "order": body.order if body.order is not None else float(n)}
     if body.title:
         scene_meta["title"] = body.title
     write_text_atomic(chapter_dir / filename, fm.serialize(scene_meta, ""))
@@ -227,22 +258,22 @@ def new_scene(slug: str, chapter_slug: str, body: NewSceneRequest) -> dict[str, 
 
 
 @router.post("/character/new")
-def new_character(slug: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
+def new_character(slug: str, body: NewSimpleEntryRequest) -> NewEntryResult:
     return _new_simple(slug, "character-profiles", body)
 
 
 @router.post("/reference/new")
-def new_reference(slug: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
+def new_reference(slug: str, body: NewSimpleEntryRequest) -> NewEntryResult:
     return _new_simple(slug, "references", body)
 
 
 @router.post("/category/{folder}/new")
-def new_category_entry(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
+def new_category_entry(slug: str, folder: str, body: NewSimpleEntryRequest) -> NewEntryResult:
     _validate_slug(folder)
     return _new_simple(slug, folder, body)
 
 
-def _new_simple(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict[str, Any]:
+def _new_simple(slug: str, folder: str, body: NewSimpleEntryRequest) -> NewEntryResult:
     root = paths.project_root(slug)
     file_slug = body.slug or slugify(body.title)
     _validate_slug(file_slug)
@@ -255,11 +286,11 @@ def _new_simple(slug: str, folder: str, body: NewSimpleEntryRequest) -> dict[str
     for fp in target_dir.glob("*.md"):
         try:
             existing_meta, _ = fm.parse(fp.read_text(encoding="utf-8"))
-            v = existing_meta.get("order")
-            if v is not None:
-                max_order = max(max_order, float(v))
-        except (OSError, ValueError):
-            pass
+        except (OSError, ValueError, yaml.YAMLError):
+            continue
+        order = coerce_order(existing_meta.get("order"))
+        if order is not None:
+            max_order = max(max_order, order)
     meta: dict[str, Any] = {"title": body.title, "aliases": [], "order": max_order + 1.0}
     write_text_atomic(target, fm.serialize(meta, ""))
     return {"path": f"{folder}/{file_slug}.md", "title": body.title}
@@ -284,7 +315,11 @@ def _apply_order_updates(slug: str, items: list[ReorderItem]) -> list[str]:
         if not abs_path.is_file():
             continue
         text = abs_path.read_text(encoding="utf-8")
-        meta, content = fm.parse(text)
+        try:
+            meta, content = fm.parse(text)
+        except (ValueError, yaml.YAMLError) as e:
+            log.warning("Skipping reorder of %s: malformed frontmatter: %s", it.path, e)
+            continue
         meta["order"] = it.order
         if it.act is not None:
             if it.act == "":
@@ -311,7 +346,11 @@ def _renumber_chapter_ordinals(slug: str) -> None:
         if not meta_fp.is_file():
             continue
         text = meta_fp.read_text(encoding="utf-8")
-        meta, content = fm.parse(text)
+        try:
+            meta, content = fm.parse(text)
+        except (ValueError, yaml.YAMLError) as e:
+            log.warning("Skipping ordinal renumber of %s: malformed frontmatter: %s", meta_fp, e)
+            continue
         entries.append((meta_fp, meta, content))
 
     entries.sort(key=lambda e: order_sort_key(coerce_order(e[1].get("order")), str(e[0])))
@@ -333,7 +372,7 @@ def _renumber_chapter_ordinals(slug: str) -> None:
 
 
 @router.post("/reorder")
-def reorder(slug: str, body: ReorderRequest) -> dict[str, Any]:
+def reorder(slug: str, body: ReorderRequest) -> ReorderResult:
     """Bulk-update the `order` (and optionally `act`) frontmatter field for
     many files at once. Each item's path must resolve safely under the project
     root."""
@@ -378,7 +417,12 @@ def move_scene(slug: str, body: SceneMoveRequest) -> SceneMoveResponse:
     new_n = next_scene_number(dst_chapter_dir)
 
     text = src_abs.read_text(encoding="utf-8")
-    meta, body_content = fm.parse(text)
+    try:
+        meta, body_content = fm.parse(text)
+    except (ValueError, yaml.YAMLError) as e:
+        raise HTTPException(
+            422, f"malformed frontmatter in {body.src_path} — fix it in the editor first"
+        ) from e
     meta["scene"] = new_n
     for item in body.dst_order:
         if item.path == body.src_path:
@@ -390,8 +434,10 @@ def move_scene(slug: str, body: SceneMoveRequest) -> SceneMoveResponse:
     write_text_atomic(new_abs, fm.serialize(meta, body_content))
     src_abs.unlink()
 
-    for conflict_file in src_chapter_dir.glob(f"{src_abs.stem}.conflict.*"):
-        shutil.move(str(conflict_file), str(dst_chapter_dir / conflict_file.name))
+    src_stem = src_abs.stem
+    for conflict_file in src_chapter_dir.glob(f"{src_stem}.conflict.*"):
+        new_conflict_name = f"{new_n:02d}{conflict_file.name[len(src_stem):]}"
+        shutil.move(str(conflict_file), str(dst_chapter_dir / new_conflict_name))
 
     _apply_order_updates(slug, [it for it in body.src_order if it.path != body.src_path])
     _apply_order_updates(slug, [it for it in body.dst_order if it.path != body.src_path])

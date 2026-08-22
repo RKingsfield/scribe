@@ -62,7 +62,3 @@ def list_scenes(project_root: Path, chapter_slug: str) -> list[SceneFile]:
             )
         )
     return out
-
-
-def is_chapter_meta_path(rel_path: str) -> bool:
-    return rel_path.endswith(f"/{CHAPTER_META_BASENAME}")

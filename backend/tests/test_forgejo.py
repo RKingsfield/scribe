@@ -1,6 +1,6 @@
 """Test Forgejo integration: ensure_repo and push_url."""
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 from scribe.git.forgejo import ensure_repo, push_url, repo_name_for
 
@@ -26,40 +26,57 @@ def test_ensure_repo_returns_false_on_empty_config() -> None:
     assert ensure_repo("http://x", "user", "", "repo") is False
 
 
+def _mock_client(get_response: MagicMock, post_response: MagicMock | None = None) -> MagicMock:
+    client = MagicMock()
+    client.get = MagicMock(return_value=get_response)
+    client.post = MagicMock(return_value=post_response)
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=client)
+    ctx.__exit__ = MagicMock(return_value=False)
+    return ctx
+
+
 @patch("scribe.git.forgejo.httpx")
 def test_ensure_repo_exists(mock_httpx: MagicMock) -> None:
-    mock_httpx.get.return_value = MagicMock(status_code=200)
+    mock_httpx.Client.return_value = _mock_client(MagicMock(status_code=200))
     result = ensure_repo("https://git.example.com", "user", "tok", "repo")
     assert result is True
-    mock_httpx.get.assert_called_once()
 
 
 @patch("scribe.git.forgejo.httpx")
 def test_ensure_repo_creates_on_404(mock_httpx: MagicMock) -> None:
-    mock_httpx.get.return_value = MagicMock(status_code=404)
-    mock_httpx.post.return_value = MagicMock(status_code=201)
+    mock_httpx.Client.return_value = _mock_client(
+        MagicMock(status_code=404), MagicMock(status_code=201)
+    )
     result = ensure_repo("https://git.example.com", "user", "tok", "repo")
     assert result is True
-    mock_httpx.post.assert_called_once()
 
 
 @patch("scribe.git.forgejo.httpx")
 def test_ensure_repo_create_conflict_is_ok(mock_httpx: MagicMock) -> None:
-    mock_httpx.get.return_value = MagicMock(status_code=404)
-    mock_httpx.post.return_value = MagicMock(status_code=409)
+    mock_httpx.Client.return_value = _mock_client(
+        MagicMock(status_code=404), MagicMock(status_code=409)
+    )
     assert ensure_repo("https://git.example.com", "user", "tok", "repo") is True
 
 
 @patch("scribe.git.forgejo.httpx")
 def test_ensure_repo_create_failure(mock_httpx: MagicMock) -> None:
-    mock_httpx.get.return_value = MagicMock(status_code=404)
-    mock_httpx.post.return_value = MagicMock(status_code=500, text="internal error")
+    mock_httpx.Client.return_value = _mock_client(
+        MagicMock(status_code=404), MagicMock(status_code=500, text="internal error")
+    )
     assert ensure_repo("https://git.example.com", "user", "tok", "repo") is False
 
 
 @patch("scribe.git.forgejo.httpx")
 def test_ensure_repo_network_error(mock_httpx: MagicMock) -> None:
     import httpx
-    mock_httpx.get.side_effect = httpx.RequestError("connection refused")
+
+    client = MagicMock()
+    client.get = MagicMock(side_effect=httpx.RequestError("connection refused"))
+    ctx = MagicMock()
+    ctx.__enter__ = MagicMock(return_value=client)
+    ctx.__exit__ = MagicMock(return_value=False)
+    mock_httpx.Client.return_value = ctx
     mock_httpx.RequestError = httpx.RequestError
     assert ensure_repo("https://git.example.com", "user", "tok", "repo") is False

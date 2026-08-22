@@ -6,21 +6,21 @@ Most novel-writing software stores your work in proprietary formats or cloud dat
 
 It runs as a single Docker container with a FastAPI backend and React PWA frontend. Point it at a directory of markdown files and go.
 
-![Editor with sidebar and scene sidecard](docs/screenshots/write-dark.png)
+![Editor with sidebar and scene sidecard](docs/screenshots/write-dark.webp)
 
-![Outline planning view with act-grouped chapters](docs/screenshots/plan-outline.png)
+![Outline planning view with act-grouped chapters](docs/screenshots/plan-outline.webp)
 
-![AI chat with scope picker and model selection](docs/screenshots/chat.png)
+![AI chat with scope picker and model selection](docs/screenshots/chat.webp)
 
-It's also a PWA you can pin to your phone or tablet. Edit on the plane, sync when you land -- writes go to IndexedDB immediately and flush to the server whenever you're back online. Conflicts are saved as plaintext files you can merge by hand, so nothing gets lost. One practice to keep: let a device finish syncing its offline changes before restructuring the same novel from another device (or directly on disk) -- text edits merge via conflict files, but offline *structural* changes racing a concurrent restructure is an accepted limitation (see [DESIGN.md](docs/DESIGN.md#accepted-limitations)).
+It's also a PWA you can pin to your phone or tablet. Edit on the plane, sync when you land. Writes go to IndexedDB immediately and flush to the server whenever you're back online. Conflicts are saved as plaintext files you can merge by hand, so nothing gets lost. One practice to keep: let a device finish syncing its offline changes before you restructure the same novel from another device or directly on disk. Text edits merge via conflict files, but offline *structural* changes racing a concurrent restructure are an accepted limitation (see [DESIGN.md](docs/DESIGN.md#accepted-limitations)).
 
-For AI-assisted writing, scribe can generate a RAG recipe from your novel's data -- characters, references, world-building notes -- for ingestion into your own LLM pipeline. You can ask questions about your world and characters without sending your manuscript to a third-party service. Everything stays on your infrastructure.
+For AI-assisted writing, scribe can generate a RAG (retrieval-augmented generation) recipe from your novel's data (characters, references, world-building notes) that your own LLM pipeline can ingest. You can ask questions about your world and characters without sending your manuscript to a third-party service. Everything stays on your infrastructure.
 
 ## What you get
 
 Your novel lives as a directory tree of `.md` files with YAML frontmatter. Chapters are directories, scenes are files inside them. The app wraps that structure in a writing-focused UI:
 
-- A distraction-free editor (CodeMirror 6) with live markdown preview, typewriter mode, and codex-aware character name highlighting
+- A distraction-free editor (CodeMirror 6) with live markdown preview, typewriter mode, and character-name highlighting driven by your codex (character profiles and reference notes)
 - Drag-and-drop scene and chapter reordering, including cross-chapter scene moves
 - Outline and status corkboard views for planning at the act/chapter level
 - AI chat and rewrite with configurable scope (scene, chapter, act, everything, codex), supporting OpenAI-compatible endpoints and the Anthropic API
@@ -44,12 +44,13 @@ docker run -d \
 
 Open `http://localhost:3030` and create a project, or set `WRITING_ROOT` to an existing directory of markdown files.
 
+For docker compose, start from [docker-compose.example.yml](docker-compose.example.yml) and [.env.example](.env.example).
+
 ## Documentation
 
-- [ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, data model, module layout, request flow
-- [DESIGN.md](docs/DESIGN.md) — why it's built this way, each trade-off explained
-- [CODE_WALKTHROUGH.md](docs/CODE_WALKTHROUGH.md) — module-by-module deep dive into how everything works
-- [Developer's guide](docs/DEVELOPERS_GUIDE.md) — local dev setup, configuration, contributing
+- [ARCHITECTURE.md](docs/ARCHITECTURE.md): system design, data model, module layout, request flow
+- [DESIGN.md](docs/DESIGN.md): why it's built this way, each trade-off explained
+- [Developer's guide](docs/DEVELOPERS_GUIDE.md): local dev setup, configuration, contributing
 
 ## License
 

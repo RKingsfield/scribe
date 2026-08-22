@@ -4,10 +4,6 @@ import tempfile
 from pathlib import Path
 
 
-def read_text(path: Path) -> str:
-    return path.read_text(encoding="utf-8")
-
-
 def write_text_atomic(path: Path, content: str) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, tmp = tempfile.mkstemp(
@@ -33,10 +29,10 @@ def sha256_text(content: str) -> str:
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
 
 
-def file_etag(path: Path) -> str:
+def file_etag(path: Path, content: bytes | None = None) -> str:
     st = path.stat()
     h = hashlib.sha256()
     h.update(str(st.st_mtime_ns).encode())
     h.update(str(st.st_size).encode())
-    h.update(path.read_bytes())
+    h.update(content if content is not None else path.read_bytes())
     return h.hexdigest()[:16]

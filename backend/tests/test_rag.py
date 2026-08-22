@@ -11,12 +11,7 @@ import yaml
 from fastapi.testclient import TestClient
 
 from scribe import config
-from scribe.main import app
 from scribe.rag.recipe import build_recipe, collection_name
-
-
-def client() -> TestClient:
-    return TestClient(app)
 
 
 def test_collection_name_uses_scribe_prefix() -> None:
@@ -134,7 +129,7 @@ def _patch_httpx(monkeypatch: pytest.MonkeyPatch, responses: dict[tuple[str, str
 
 
 def test_rag_state_when_no_recipe_and_no_collection(
-    sample_project: Path, monkeypatch, tmp_path: Path
+    sample_project: Path, monkeypatch, tmp_path: Path, client: TestClient
 ) -> None:
     monkeypatch.setattr(config, "RAG_RECIPES_DIR", tmp_path / "recipes")
     _patch_httpx(
@@ -143,7 +138,7 @@ def test_rag_state_when_no_recipe_and_no_collection(
             ("GET", "/collections/scribe-example-novel"): _FakeResp(404, {}),
         },
     )
-    r = client().get("/api/projects/example-novel/rag")
+    r = client.get("/api/projects/example-novel/rag")
     assert r.status_code == 200
     data = r.json()
     assert data["collection"] == "scribe-example-novel"
@@ -154,7 +149,7 @@ def test_rag_state_when_no_recipe_and_no_collection(
 
 
 def test_rag_state_when_collection_exists(
-    sample_project: Path, monkeypatch, tmp_path: Path
+    sample_project: Path, monkeypatch, tmp_path: Path, client: TestClient
 ) -> None:
     monkeypatch.setattr(config, "RAG_RECIPES_DIR", tmp_path / "recipes")
     _patch_httpx(
@@ -174,7 +169,7 @@ def test_rag_state_when_collection_exists(
             ),
         },
     )
-    r = client().get("/api/projects/example-novel/rag")
+    r = client.get("/api/projects/example-novel/rag")
     assert r.status_code == 200
     qd = r.json()["qdrant"]
     assert qd["exists"] is True
@@ -186,13 +181,13 @@ def test_rag_state_when_collection_exists(
 
 
 def test_put_recipe_writes_yaml_to_recipes_dir(
-    sample_project: Path, monkeypatch, tmp_path: Path
+    sample_project: Path, monkeypatch, tmp_path: Path, client: TestClient
 ) -> None:
     writing_root = str(sample_project.parent)
     recipes_dir = tmp_path / "recipes"
     monkeypatch.setattr(config, "RAG_RECIPES_DIR", recipes_dir)
     monkeypatch.setattr(config, "RAG_HOST_WRITING_ROOT", writing_root)
-    r = client().put("/api/projects/example-novel/rag/recipe")
+    r = client.put("/api/projects/example-novel/rag/recipe")
     assert r.status_code == 200
     data = r.json()
     assert data["written"] is True
@@ -209,7 +204,7 @@ def test_put_recipe_writes_yaml_to_recipes_dir(
 
 
 def test_delete_collection_proxies_to_qdrant(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     fake = _patch_httpx(
         monkeypatch,
@@ -217,20 +212,22 @@ def test_delete_collection_proxies_to_qdrant(
             ("DELETE", "/collections/scribe-example-novel"): _FakeResp(200, {"status": "ok"}),
         },
     )
-    r = client().delete("/api/projects/example-novel/rag/collection")
+    r = client.delete("/api/projects/example-novel/rag/collection")
     assert r.status_code == 204
     methods = [c[0] for c in fake.calls]
     assert "DELETE" in methods
 
 
-def test_delete_collection_tolerates_404(sample_project: Path, monkeypatch) -> None:
+def test_delete_collection_tolerates_404(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     _patch_httpx(
         monkeypatch,
         {
             ("DELETE", "/collections/scribe-example-novel"): _FakeResp(404, {}),
         },
     )
-    r = client().delete("/api/projects/example-novel/rag/collection")
+    r = client.delete("/api/projects/example-novel/rag/collection")
     assert r.status_code == 204
 
 
@@ -238,7 +235,7 @@ def test_delete_collection_tolerates_404(sample_project: Path, monkeypatch) -> N
 
 
 def test_query_returns_hits_from_qdrant_search(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     _patch_httpx(
         monkeypatch,
@@ -262,7 +259,7 @@ def test_query_returns_hits_from_qdrant_search(
             ),
         },
     )
-    r = client().post(
+    r = client.post(
         "/api/projects/example-novel/rag/query",
         json={"text": "Who tested the axe?", "limit": 5},
     )
@@ -273,7 +270,9 @@ def test_query_returns_hits_from_qdrant_search(
     assert data["hits"][0]["payload"]["path"] == "chapters/01/01.md"
 
 
-def test_query_404_when_collection_missing(sample_project: Path, monkeypatch) -> None:
+def test_query_404_when_collection_missing(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     _patch_httpx(
         monkeypatch,
         {
@@ -281,12 +280,47 @@ def test_query_404_when_collection_missing(sample_project: Path, monkeypatch) ->
             ("POST", "/collections/scribe-example-novel/points/search"): _FakeResp(404, {}),
         },
     )
-    r = client().post(
+    r = client.post(
         "/api/projects/example-novel/rag/query", json={"text": "anything"}
     )
     assert r.status_code == 404
 
 
-def test_query_rejects_empty_text(sample_project: Path) -> None:
-    r = client().post("/api/projects/example-novel/rag/query", json={"text": "  "})
+def test_query_rejects_empty_text(sample_project: Path, client: TestClient) -> None:
+    r = client.post("/api/projects/example-novel/rag/query", json={"text": "  "})
     assert r.status_code == 400
+
+
+def test_query_uses_embeddings_key_as_fallback(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
+    _patch_httpx(
+        monkeypatch,
+        {
+            ("POST", "/embed"): _FakeResp(200, {"embeddings": [[0.2] * 8]}),
+            ("POST", "/collections/scribe-example-novel/points/search"): _FakeResp(
+                200,
+                {
+                    "result": [
+                        {
+                            "score": 0.85,
+                            "payload": {
+                                "kind": "scene",
+                                "path": "chapters/01/02.md",
+                                "text": "A scene text.",
+                            },
+                        }
+                    ],
+                    "status": "ok",
+                },
+            ),
+        },
+    )
+    r = client.post(
+        "/api/projects/example-novel/rag/query",
+        json={"text": "Search query", "limit": 5},
+    )
+    assert r.status_code == 200
+    data = r.json()
+    assert data["embed_dim"] == 8
+    assert len(data["hits"]) == 1

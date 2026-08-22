@@ -127,7 +127,7 @@ export function CommandPalette({
       title: 'Project RAG (recipe + ingest)',
       group: 'Project',
       icon: <BookOpen size={14} />,
-      hint: 'M13',
+      hint: 'RAG',
       run: () => { onOpenRag(); onClose(); },
     },
     onOpenExport && {
@@ -135,7 +135,7 @@ export function CommandPalette({
       title: 'Export project (docx / epub / html / md)',
       group: 'Project',
       icon: <Download size={14} />,
-      hint: 'M14',
+      hint: 'Export',
       run: () => { onOpenExport(); onClose(); },
     },
     onPrefetch && {
@@ -155,20 +155,18 @@ export function CommandPalette({
         hint: c.chapter !== null ? `Ch. ${c.chapter}` : c.slug,
         icon: '§',
         group: 'Chapters',
-        run: () => goToFile(c.scenes.length === 1 ? c.scenes[0].path : c.meta_path),
+        run: () => goToFile(c.meta_path),
       },
     ];
-    if (c.scenes.length > 1) {
-      for (const s of c.scenes) {
-        items.push({
-          id: `scene-${s.path}`,
-          title: s.title || `Scene ${s.scene ?? ''}`,
-          hint: c.chapter !== null && s.scene !== null ? `${c.chapter}.${s.scene}` : '',
-          icon: '·',
-          group: 'Scenes',
-          run: () => goToFile(s.path),
-        });
-      }
+    for (const s of c.scenes) {
+      items.push({
+        id: `scene-${s.path}`,
+        title: s.title || `Scene ${s.scene ?? ''}`,
+        hint: c.chapter !== null && s.scene !== null ? `${c.chapter}.${s.scene}` : '',
+        icon: '·',
+        group: 'Scenes',
+        run: () => goToFile(s.path),
+      });
     }
     return items;
   });

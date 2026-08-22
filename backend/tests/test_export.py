@@ -8,12 +8,6 @@ from typing import Any
 from fastapi.testclient import TestClient
 
 from scribe.export.manuscript import ExportOptions, compose_manuscript
-from scribe.main import app
-
-
-def client() -> TestClient:
-    return TestClient(app)
-
 
 # ---------------- compose_manuscript ----------------
 
@@ -66,30 +60,40 @@ def test_compose_includes_summaries_when_requested(sample_project: Path) -> None
 # ---------------- /export ----------------
 
 
-def test_export_md_passthrough(sample_project: Path) -> None:
-    r = client().get("/api/projects/example-novel/export", params={"format": "md"})
+def test_export_md_passthrough(sample_project: Path, client: TestClient) -> None:
+    r = client.get("/api/projects/example-novel/export", params={"format": "md"})
     assert r.status_code == 200
     assert r.headers["content-type"].startswith("text/markdown")
     assert "example-novel.md" in r.headers["content-disposition"]
     assert "# The Example Novel" in r.text
 
 
-def test_export_unsupported_format_400(sample_project: Path) -> None:
-    r = client().get("/api/projects/example-novel/export", params={"format": "pdf"})
+def test_export_md_survives_malformed_scene_frontmatter(
+    sample_project: Path, client: TestClient
+) -> None:
+    scene = sample_project / "chapters" / "01_Chapter_01" / "01.md"
+    scene.write_text("---\ntitle: [unclosed\n---\nBody text here.\n", encoding="utf-8")
+    r = client.get("/api/projects/example-novel/export", params={"format": "md"})
+    assert r.status_code == 200
+    assert "Body text here." in r.text
+
+
+def test_export_unsupported_format_400(sample_project: Path, client: TestClient) -> None:
+    r = client.get("/api/projects/example-novel/export", params={"format": "pdf"})
     assert r.status_code in (400, 422)
 
 
 def test_export_pandoc_when_binary_missing_returns_503(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     monkeypatch.setattr("scribe.export.pandoc.shutil.which", lambda _: None)
-    r = client().get("/api/projects/example-novel/export", params={"format": "docx"})
+    r = client.get("/api/projects/example-novel/export", params={"format": "docx"})
     assert r.status_code == 503
     assert "pandoc" in r.json()["detail"].lower()
 
 
 def test_export_pandoc_invokes_subprocess_with_format_flag(
-    sample_project: Path, monkeypatch
+    sample_project: Path, monkeypatch, client: TestClient
 ) -> None:
     """When pandoc is present, the route should spawn it and stream stdout."""
 
@@ -114,7 +118,7 @@ def test_export_pandoc_invokes_subprocess_with_format_flag(
         "scribe.export.pandoc.asyncio.create_subprocess_exec", fake_create
     )
 
-    r = client().get(
+    r = client.get(
         "/api/projects/example-novel/export",
         params={"format": "epub"},
     )
@@ -130,7 +134,9 @@ def test_export_pandoc_invokes_subprocess_with_format_flag(
     assert captured["stdin_len"] > 0
 
 
-def test_export_propagates_pandoc_error(sample_project: Path, monkeypatch) -> None:
+def test_export_propagates_pandoc_error(
+    sample_project: Path, monkeypatch, client: TestClient
+) -> None:
     monkeypatch.setattr("scribe.export.pandoc.shutil.which", lambda _: "/usr/bin/pandoc")
 
     class _FakeProc:
@@ -146,6 +152,6 @@ def test_export_propagates_pandoc_error(sample_project: Path, monkeypatch) -> No
         "scribe.export.pandoc.asyncio.create_subprocess_exec", fake_create
     )
 
-    r = client().get("/api/projects/example-novel/export", params={"format": "docx"})
+    r = client.get("/api/projects/example-novel/export", params={"format": "docx"})
     assert r.status_code == 500
     assert "pandoc failed" in r.json()["detail"].lower()
